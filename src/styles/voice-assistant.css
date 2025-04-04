@@ -1,0 +1,140 @@
+/* Voice Assistant Styles - Enhanced for LARK LiveKit Integration */
+.listening-status {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-weight: 600;
+  position: relative;
+}
+
+.listening-status.listening-active {
+  color: hsl(var(--success)) !important;
+  animation: pulse 1.5s infinite;
+  text-shadow: 0 0 8px hsla(var(--success), 0.3);
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.05);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+#voice-feedback {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 8px 16px hsla(var(--primary), 0.15), 0 2px 4px hsla(var(--accent), 0.1);
+  border: 1px solid hsla(var(--border), 0.6);
+  backdrop-filter: blur(8px);
+  background-color: hsla(var(--card), 0.85);
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 20px) scale(0.95);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+    filter: blur(0);
+  }
+}
+
+.command-heard {
+  background-color: hsla(var(--primary), 0.1);
+  border-left: 3px solid hsl(var(--primary));
+  border-radius: 0 4px 4px 0;
+  padding: 8px 12px 8px 12px;
+  margin: 4px 0;
+  animation: highlight 2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 8px hsla(var(--primary), 0.1);
+}
+
+@keyframes highlight {
+  0% {
+    background-color: hsla(var(--primary), 0.3);
+    box-shadow: 0 0 12px hsla(var(--primary), 0.2);
+  }
+  100% {
+    background-color: hsla(var(--primary), 0.1);
+    box-shadow: 0 2px 8px hsla(var(--primary), 0.1);
+  }
+}
+
+/* Voice Indicator Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from { transform: scale(0.9) translateX(-50%); }
+  to { transform: scale(1) translateX(-50%); }
+}
+
+@keyframes wave {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.15); opacity: 0.8; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes ripple {
+  0% {
+    transform: scale(0.8);
+    opacity: 1;
+    box-shadow: 0 0 0 0 hsla(var(--success), 0.4);
+  }
+  70% {
+    transform: scale(1.6);
+    opacity: 0.3;
+    box-shadow: 0 0 0 10px hsla(var(--success), 0);
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+    box-shadow: 0 0 0 10px hsla(var(--success), 0);
+  }
+}
+
+/* Enhanced Microphone Animation */
+.mic-active {
+  position: relative;
+  z-index: 1;
+}
+
+.mic-active::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 16px;
+  height: 16px;
+  background: hsla(var(--success), 0.4);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  animation: ripple 1.5s infinite cubic-bezier(0, 0, 0.2, 1);
+  z-index: -1;
+}
+
+.mic-active::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  background: hsla(var(--success), 0.2);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  animation: ripple 1.5s infinite cubic-bezier(0, 0, 0.2, 1);
+  animation-delay: 0.3s;
+  z-index: -2;
+}

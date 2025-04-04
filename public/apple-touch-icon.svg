@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Badge Background -->
+  <path d="M256 16C128.85 16 25.6 119.25 25.6 246.4C25.6 373.55 128.85 476.8 256 476.8C383.15 476.8 486.4 373.55 486.4 246.4C486.4 119.25 383.15 16 256 16Z" fill="#003087"/>
+  
+  <!-- Badge Star -->
+  <path d="M255.5 56L287.07 150.493H388.11L307.02 208.514L338.59 303.007L255.5 244.986L172.41 303.007L203.98 208.514L122.89 150.493H223.93L255.5 56Z" fill="#FFD700"/>
+  
+  <!-- Inner Circle -->
+  <circle cx="255.5" cy="246.5" r="160" fill="#003087" stroke="#FFD700" stroke-width="6"/>
+  
+  <!-- Badge Shield -->
+  <path d="M255.5 126.5C235.5 146.5 215.5 156.5 175.5 156.5V236.5C175.5 316.5 255.5 356.5 255.5 356.5C255.5 356.5 335.5 316.5 335.5 236.5V156.5C295.5 156.5 275.5 146.5 255.5 126.5Z" fill="#003087" stroke="#FFD700" stroke-width="4"/>
+  
+  <!-- "LARK" Text -->
+  <text x="255.5" y="246.5" font-family="Arial, sans-serif" font-weight="bold" font-size="48" text-anchor="middle" fill="#FFD700">LARK</text>
+</svg>

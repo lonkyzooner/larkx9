@@ -1,0 +1,262 @@
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Roboto+Mono:wght@400;500;600&family=Manrope:wght@200;300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@200;300;400;500;600;700;800&display=swap');
+
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+
+@layer base {
+  html {
+    font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+    letter-spacing: -0.01em;
+  }
+
+  .font-heading {
+    font-family: 'Manrope', 'Plus Jakarta Sans', sans-serif;
+    letter-spacing: -0.03em;
+  }
+
+  .font-mono {
+    font-family: 'Roboto Mono', monospace;
+  }
+
+  .font-orbitron {
+    font-family: 'Orbitron', sans-serif;
+  }
+
+  :root {
+    /* Modern LARK color scheme - light theme */
+    --background: 210 40% 98%; /* Clean white background */
+    --foreground: 222 47% 15%; /* Dark blue text for high readability */
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 15%;
+
+    /* Blue primary - vibrant but professional */
+    --primary: 213 94% 50%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Light blue secondary for backgrounds and containers */
+    --secondary: 213 70% 95%;
+    --secondary-foreground: 213 80% 30%;
+
+    /* Muted colors with better contrast */
+    --muted: 220 15% 93%;
+    --muted-foreground: 215 25% 35%;
+
+    /* Vibrant teal accent for important UI elements */
+    --accent: 183 85% 45%;
+    --accent-foreground: 222 47% 15%;
+
+    /* Bright red for alerts with better visibility */
+    --destructive: 358 75% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Better defined borders for element separation */
+    --border: 215 25% 85%;
+    --input: 215 25% 85%;
+    --ring: 213 94% 50%;
+
+    --radius: 0.5rem;
+    
+    /* Status colors for feedback */
+    --success: 142 70% 45%;
+    --warning: 38 92% 50%;
+    --info: 200 90% 50%;
+    --low-battery: 358 75% 55%;
+  }
+
+  .high-contrast {
+    --background: 0 0% 100%;
+    --foreground: 220 33% 6%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 33% 6%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 33% 6%;
+
+    --primary: 213 100% 26%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 220 33% 12%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 220 33% 12%;
+    --muted-foreground: 217.2 32.6% 40%;
+
+    --accent: 220 33% 12%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 215 27.9% 16.9%;
+    --input: 215 27.9% 16.9%;
+    --ring: 220 33% 20%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+@layer components {
+  .lark-button {
+    @apply h-12 px-4 py-2 bg-secondary border border-border/50 rounded-md
+    hover:bg-secondary/90 active:scale-[0.98] transition-all duration-150
+    flex items-center gap-2
+    text-foreground text-sm font-medium;
+  }
+
+  .lark-button-icon {
+    @apply text-primary text-lg;
+  }
+
+  .lark-section {
+    @apply mb-4 pb-2 border-b border-border;
+  }
+
+  .lark-section-title {
+    @apply text-sm font-semibold text-primary mb-2 uppercase tracking-wide;
+  }
+
+  .lark-status-bar {
+    @apply flex items-center justify-between p-2 bg-secondary/50 border border-border/50
+    rounded-md mb-3 text-xs font-medium;
+  }
+
+  .low-power * {
+    @apply !animate-none transition-none;
+  }
+
+  .glass-panel {
+    @apply bg-card border border-border/50 rounded-md p-4
+    shadow-sm;
+  }
+}
+
+.record-button {
+  @apply w-16 h-16 rounded-full bg-gradient-to-br from-red-500 to-red-600
+  flex items-center justify-center text-white shadow-xl relative
+  hover:scale-105 active:scale-95 transition-all duration-200
+  ring-2 ring-red-500/20;
+}
+
+.record-button::before {
+  content: '';
+  @apply absolute inset-0 rounded-full animate-pulse border-2 border-red-500/50;
+}
+
+.record-button.active::before {
+  @apply animate-ripple;
+}
+
+.wave-animation {
+  @apply flex items-end h-6 space-x-1;
+}
+
+.wave-bar {
+  @apply w-1 bg-lark-blue rounded-t;
+  height: 20%;
+  animation: wave 1.2s ease-in-out infinite;
+}
+
+.wave-bar:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.wave-bar:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+.wave-bar:nth-child(4) {
+  animation-delay: 0.6s;
+}
+
+.wave-bar:nth-child(5) {
+  animation-delay: 0.8s;
+}
+
+.hologram {
+  @apply fixed inset-0 flex items-center justify-center pointer-events-none;
+}
+
+.hologram-content {
+  @apply w-64 h-72 bg-accent/10 backdrop-blur-2xl rounded-3xl
+  ring-1 ring-accent/30 flex items-center justify-center
+  animate-fade-in opacity-80 shadow-2xl
+  hover:bg-accent/15 transition-all duration-300;
+}
+
+.listening-indicator {
+  @apply absolute -top-1 -right-1 w-4 h-4 rounded-full bg-white animate-pulse;
+}
+
+/* New modernized styles */
+.dispatch-connect {
+  @apply fixed inset-0 flex items-center justify-center pointer-events-none;
+}
+
+.dispatch-connect-content {
+  @apply w-4/5 max-w-md bg-secondary/90 backdrop-blur-2xl rounded-3xl
+  ring-1 ring-accent/30 p-8 animate-fade-in shadow-2xl
+  border-0;
+}
+
+.pulse-ring {
+  @apply absolute -inset-1 rounded-full;
+  animation: pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.7);
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.3;
+  }
+  100% {
+    transform: scale(1.2);
+    opacity: 0;
+  }
+}
+
+/* Modernized buttons */
+.modern-button {
+  @apply transition-all duration-300 ease-in-out transform hover:scale-105 
+  hover:shadow-lg active:scale-95 bg-gradient-to-br from-lark-light-blue/20 
+  to-lark-blue/10 backdrop-blur-sm border border-white/10 rounded-xl;
+}
+
+/* Command history item with animation */
+.command-history-item {
+  @apply py-2 border-b border-white/5 transition-all duration-300;
+  animation: slideIn 0.3s ease-out forwards;
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+@keyframes slideIn {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.command-history-item:nth-child(1) { animation-delay: 0.1s; }
+.command-history-item:nth-child(2) { animation-delay: 0.2s; }
+.command-history-item:nth-child(3) { animation-delay: 0.3s; }
+.command-history-item:nth-child(4) { animation-delay: 0.4s; }
+.command-history-item:nth-child(5) { animation-delay: 0.5s; }

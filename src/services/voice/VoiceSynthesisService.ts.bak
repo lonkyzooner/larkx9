@@ -1,0 +1,149 @@
+import { BehaviorSubject } from 'rxjs';
+
+// Always use Josh's voice ID directly to ensure consistency
+const JOSH_VOICE_ID = 'TxGEqnHWrfWFTfGW9XjX';
+const ELEVENLABS_API_KEY = import.meta.env.VITE_ELEVENLABS_API_KEY;
+
+// Track API failures to avoid repeated failed calls
+let elevenlabsApiFailureCount = 0;
+const MAX_API_FAILURES = 3;
+
+// Default voice settings optimized for Josh's voice
+const DEFAULT_VOICE_SETTINGS = {
+  stability: 0.7,
+  similarityBoost: 0.85,
+  style: 0.35,
+  useSpeakerBoost: true
+};
+
+export class VoiceSynthesisService {
+  private isSpeaking = new BehaviorSubject<boolean>(false);
+  private audioQueue: { text: string; priority: number }[] = [];
+  private currentAudio: HTMLAudioElement | null = null;
+  private isProcessingQueue = false;
+
+  constructor() {
+    console.log('[VoiceSynthesis] Service initialized with Josh voice');
+  }
+
+  /**
+   * Get the current speaking state
+   */
+  public getSpeakingState() {
+    return this.isSpeaking.asObservable();
+  }
+
+  /**
+   * Speak text using ElevenLabs Josh voice
+   */
+  public async speak(text: string, priority = 1): Promise<void> {
+    try {
+      // Add to queue
+      this.audioQueue.push({ text, priority });
+      this.audioQueue.sort((a, b) => b.priority - a.priority);
+
+      // Start processing queue if not already processing
+      if (!this.isProcessingQueue) {
+        await this.processQueue();
+      }
+    } catch (error) {
+      console.error('[VoiceSynthesis] Error queueing speech:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Stop current speech
+   */
+  public stop(): void {
+    if (this.currentAudio) {
+      this.currentAudio.pause();
+      this.currentAudio.currentTime = 0;
+      this.currentAudio = null;
+    }
+    this.isSpeaking.next(false);
+    this.audioQueue = [];
+    this.isProcessingQueue = false;
+  }
+
+  /**
+   * Process the audio queue
+   */
+  private async processQueue(): Promise<void> {
+    if (this.isProcessingQueue || this.audioQueue.length === 0) {
+      return;
+    }
+
+    this.isProcessingQueue = true;
+
+    while (this.audioQueue.length > 0) {
+      const { text } = this.audioQueue.shift()!;
+
+      // If we've had too many failures, wait before trying again
+      if (elevenlabsApiFailureCount >= MAX_API_FAILURES) {
+        console.log('Too many API failures, waiting 5 seconds before retry...');
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        elevenlabsApiFailureCount = 0;
+      }
+
+      try {
+        // Add timeout to prevent hanging
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+        const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${JOSH_VOICE_ID}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'xi-api-key': ELEVENLABS_API_KEY,
+          },
+          body: JSON.stringify({
+            text,
+            model_id: 'eleven_monolingual_v1',
+            voice_settings: DEFAULT_VOICE_SETTINGS,
+          }),
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          let errorMessage = `ElevenLabs API error: ${response.status}`;
+          try {
+            const errorData = await response.json();
+            errorMessage = `ElevenLabs API error: ${errorData.detail || response.statusText}`;
+          } catch (e) {
+            console.error('Failed to parse error response:', e);
+          }
+          throw new Error(errorMessage);
+        }
+
+        // Reset failure count on success
+        elevenlabsApiFailureCount = 0;
+
+        const audioBlob = await response.blob();
+        const audioUrl = URL.createObjectURL(audioBlob);
+        
+        await this.playAudio(audioUrl);
+        URL.revokeObjectURL(audioUrl);
+      } catch (error) {
+        console.error('[VoiceSynthesis] Error generating speech:', error);
+        elevenlabsApiFailureCount++;
+        console.log(`ElevenLabs API failure count: ${elevenlabsApiFailureCount}`);
+
+        // For Miranda rights, we want to retry immediately
+        if (text.toLowerCase().includes('right to remain silent')) {
+          this.audioQueue.unshift({ text, priority: 2 }); // Re-add to front of queue with higher priority
+          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait a second before retry
+        }
+      }
+    }
+
+    this.isProcessingQueue = false;
+  }
+
+
+}
+
+// Create singleton instance
+export const voiceSynthesisService = new VoiceSynthesisService();

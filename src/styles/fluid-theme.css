@@ -1,0 +1,234 @@
+/* Modern Fluid Theme for LARK UI
+   Inspired by Evoke Studio design with flowing elements */
+
+:root {
+  --evoke-light-blue: #e9f2f9;
+  --evoke-accent-gold: #d9c08c;
+  --evoke-dark-blue: #003087;
+  --evoke-text: #222222;
+  --evoke-white: #ffffff;
+}
+
+/* Override the default theme colors with our fluid theme */
+:root {
+  --background: 210 40% 96%;
+  --card: 0 0% 100%;
+  --primary: 213 94% 26%;
+  --secondary: 213 70% 95%;
+  --law-enforcement-blue: #003087;
+}
+
+/* Apply fluid design to the entire application */
+body {
+  background-color: var(--evoke-light-blue);
+  background-image: linear-gradient(135deg, #e9f2f9 0%, #d1e6f9 100%);
+  min-height: 100vh;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  color: var(--evoke-text);
+}
+
+.fluid-background {
+  background: var(--evoke-light-blue);
+  position: relative;
+  overflow: hidden;
+  background-image: linear-gradient(135deg, #e9f2f9 0%, #d1e6f9 100%);
+}
+
+.fluid-background::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0) 100%);
+  opacity: 0.6;
+  z-index: 0;
+}
+
+.fluid-card {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 10px 30px rgba(0, 48, 135, 0.08);
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Apply fluid card design to all cards in the application */
+.bg-card, [class*="bg-card"] {
+  background: rgba(255, 255, 255, 0.85) !important;
+  backdrop-filter: blur(12px) !important;
+  border-radius: 16px !important;
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  box-shadow: 0 10px 30px rgba(0, 48, 135, 0.08) !important;
+}
+
+.fluid-card::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    45deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.1) 30%,
+    transparent 60%
+  );
+  transform: rotate(30deg);
+  animation: fluid-shine 6s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.fluid-heading {
+  font-family: 'Manrope', sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: #111827;
+  line-height: 1.1;
+}
+
+.fluid-button {
+  background: var(--evoke-dark-blue);
+  color: white;
+  border: none;
+  border-radius: 100px;
+  padding: 0.6rem 1.5rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  letter-spacing: -0.01em;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+  z-index: 1;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+/* Apply fluid button styling to all buttons */
+button, .btn, [class*="btn-"], [role="button"] {
+  border-radius: 100px !important;
+  transition: all 0.3s ease !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.01em !important;
+}
+
+.fluid-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.2) 50%, transparent 100%);
+  transition: all 0.5s ease;
+  z-index: -1;
+}
+
+.fluid-button:hover::before {
+  left: 100%;
+}
+
+.fluid-input {
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  transition: all 0.3s ease;
+}
+
+.fluid-input:focus {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(0, 0, 0, 0.3);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.05);
+}
+
+/* Fluid animations */
+@keyframes fluid-shift {
+  0% {
+    background-position: 0% 0%;
+  }
+  100% {
+    background-position: 100% 100%;
+  }
+}
+
+@keyframes fluid-shine {
+  0% {
+    transform: translateX(-100%) translateY(-100%) rotate(30deg);
+  }
+  100% {
+    transform: translateX(100%) translateY(100%) rotate(30deg);
+  }
+}
+
+/* Law enforcement blue accent elements */
+.le-blue-accent {
+  background: var(--law-enforcement-blue, #003087);
+  background: linear-gradient(135deg, #003087 0%, #0055cc 100%);
+  color: white;
+}
+
+/* Apply fluid design to tabs */
+.tabs-list, [role="tablist"] {
+  background: rgba(255, 255, 255, 0.5) !important;
+  backdrop-filter: blur(8px) !important;
+  border-radius: 9999px !important;
+  padding: 0.25rem !important;
+  border: 1px solid rgba(255, 255, 255, 0.6) !important;
+}
+
+/* Apply fluid design to active tabs */
+[data-state="active"] {
+  background: var(--law-enforcement-blue, #003087) !important;
+  color: white !important;
+}
+
+/* Flowing wave decoration elements */
+.fluid-wave {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 150px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 320'%3E%3Cpath fill='%23003087' fill-opacity='0.15' d='M0,224L48,213.3C96,203,192,181,288,181.3C384,181,480,203,576,202.7C672,203,768,181,864,181.3C960,181,1056,203,1152,208C1248,213,1344,203,1392,197.3L1440,192L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z'%3E%3C/path%3E%3C/svg%3E");
+  background-size: cover;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.fluid-wave-gold {
+  position: absolute;
+  top: 15%;
+  right: 0;
+  width: 100%;
+  height: 120px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 320'%3E%3Cpath fill='%23d9c08c' fill-opacity='0.2' d='M0,96L48,112C96,128,192,160,288,186.7C384,213,480,235,576,224C672,213,768,171,864,149.3C960,128,1056,128,1152,149.3C1248,171,1344,213,1392,234.7L1440,256L1440,0L1392,0C1344,0,1248,0,1152,0C1056,0,960,0,864,0C768,0,672,0,576,0C480,0,384,0,288,0C192,0,96,0,48,0L0,0Z'%3E%3C/path%3E%3C/svg%3E");
+  background-size: cover;
+  transform: rotate(180deg);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.8;
+}
+
+/* Glassy container for components */
+.fluid-glass {
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(10px);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 4px 30px rgba(0, 48, 135, 0.1);
+}
+
+/* Badge with fluid design */
+.fluid-badge {
+  background: linear-gradient(135deg, #003087 0%, #0055cc 100%);
+  color: white;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 9999px;
+  font-weight: 600;
+}

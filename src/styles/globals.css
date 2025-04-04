@@ -1,0 +1,112 @@
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+ 
+@layer base {
+  :root {
+    /* Base colors */
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
+ 
+    /* Card colors */
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+ 
+    /* Popover colors */
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+ 
+    /* Primary colors - Police blue */
+    --primary: 214 80% 25%;
+    --primary-foreground: 210 40% 98%;
+ 
+    /* Secondary colors - Subtle blue-gray */
+    --secondary: 215 25% 94%;
+    --secondary-foreground: 214 80% 25%;
+ 
+    /* Muted colors */
+    --muted: 214 20% 92%;
+    --muted-foreground: 216 15% 47%;
+ 
+    /* Accent colors - Gold/amber for highlights */
+    --accent: 45 100% 50%;
+    --accent-foreground: 210 20% 12%;
+ 
+    /* Success colors - Green */
+    --success: 142 70% 45%;
+    --success-foreground: 210 40% 98%;
+
+    /* Warning colors - Amber */
+    --warning: 38 92% 50%;
+    --warning-foreground: 210 40% 98%;
+ 
+    /* Destructive colors - Red */
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+ 
+    /* Border, input and ring colors */
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 214 80% 25%;
+ 
+    /* Border radius */
+    --radius: 0.5rem;
+  }
+ 
+  .dark {
+    /* Base colors - Dark mode */
+    --background: 222 18% 12%;
+    --foreground: 210 40% 98%;
+ 
+    /* Card colors - Dark mode */
+    --card: 222 16% 16%;
+    --card-foreground: 210 40% 98%;
+ 
+    /* Popover colors - Dark mode */
+    --popover: 222 16% 16%;
+    --popover-foreground: 210 40% 98%;
+ 
+    /* Primary colors - Police blue (lighter in dark mode) */
+    --primary: 214 70% 50%;
+    --primary-foreground: 210 40% 98%;
+ 
+    /* Secondary colors - Dark blue-gray */
+    --secondary: 217 33% 22%;
+    --secondary-foreground: 210 40% 98%;
+ 
+    /* Muted colors - Dark mode */
+    --muted: 217 33% 22%;
+    --muted-foreground: 215 20% 75%;
+ 
+    /* Accent colors - Gold/amber (slightly muted in dark mode) */
+    --accent: 45 80% 50%;
+    --accent-foreground: 210 40% 98%;
+ 
+    /* Success colors - Green (dark mode) */
+    --success: 142 70% 40%;
+    --success-foreground: 210 40% 98%;
+
+    /* Warning colors - Amber (dark mode) */
+    --warning: 38 92% 50%;
+    --warning-foreground: 210 40% 98%;
+ 
+    /* Destructive colors - Red (dark mode) */
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 210 40% 98%;
+ 
+    /* Border, input and ring colors - Dark mode */
+    --border: 217 33% 25%;
+    --input: 217 33% 25%;
+    --ring: 214 70% 50%;
+  }
+}
+ 
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+  }
+}

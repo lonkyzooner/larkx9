@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LARK v1.0</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #001a3a;
+            color: white;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            padding: 10px;
+            border: 2px solid #0055aa;
+            border-radius: 10px;
+            background-color: #001a3a;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            background-color: #000c1a;
+            border-radius: 5px 5px 0 0;
+        }
+        
+        .title {
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+        
+        .status {
+            display: flex;
+            align-items: center;
+        }
+        
+        .mic-status {
+            display: flex;
+            align-items: center;
+            margin-right: 10px;
+        }
+        
+        .mic-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: red;
+            margin-right: 5px;
+        }
+        
+        .mic-indicator.active {
+            background-color: green;
+        }
+        
+        .battery {
+            display: flex;
+            align-items: center;
+        }
+        
+        .battery-icon {
+            width: 25px;
+            height: 12px;
+            border: 1px solid white;
+            border-radius: 2px;
+            position: relative;
+            margin-right: 5px;
+        }
+        
+        .battery-icon:after {
+            content: '';
+            position: absolute;
+            right: -4px;
+            top: 3px;
+            width: 3px;
+            height: 6px;
+            background-color: white;
+            border-radius: 0 2px 2px 0;
+        }
+        
+        .battery-level {
+            height: 100%;
+            width: 85%;
+            background-color: green;
+        }
+        
+        .main-content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .lark-circle {
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            border: 5px solid #0055aa;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 30px;
+            position: relative;
+            overflow: hidden;
+            background-color: #001a3a;
+            box-shadow: 0 0 20px rgba(0, 85, 170, 0.5);
+        }
+        
+        .lark-text {
+            font-size: 3em;
+            font-weight: bold;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.7);
+        }
+        
+        .status-text {
+            font-size: 1.5em;
+            margin-bottom: 20px;
+        }
+        
+        .message-box {
+            background-color: rgba(0, 26, 58, 0.8);
+            border: 1px solid #0055aa;
+            border-radius: 10px;
+            padding: 15px;
+            width: 100%;
+            text-align: center;
+        }
+        
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(0, 85, 170, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 15px rgba(0, 85, 170, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(0, 85, 170, 0);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="title">LARK v1.0</div>
+            <div class="status">
+                <div class="mic-status">
+                    <div class="mic-indicator" id="mic-indicator"></div>
+                    <span>Mic</span>
+                </div>
+                <div class="battery">
+                    <div class="battery-icon">
+                        <div class="battery-level"></div>
+                    </div>
+                    <span>85%</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="main-content">
+            <div class="lark-circle pulse" id="lark-circle">
+                <div class="lark-text">LARK</div>
+            </div>
+            
+            <div class="status-text" id="status-text">
+                Ready. Say "Hey LARK" to activate.
+            </div>
+            
+            <div class="message-box" id="message-box">
+                Welcome to LARK. Say "Hey LARK" to activate.
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const micIndicator = document.getElementById('mic-indicator');
+        const larkCircle = document.getElementById('lark-circle');
+        const statusText = document.getElementById('status-text');
+        const messageBox = document.getElementById('message-box');
+        
+        // States
+        const STATE_READY = 0;
+        const STATE_LISTENING = 1;
+        const STATE_PROCESSING = 2;
+        const STATE_RESPONDING = 3;
+        
+        let currentState = STATE_READY;
+        
+        // Simulate microphone activation on click
+        larkCircle.addEventListener('click', () => {
+            if (currentState === STATE_READY) {
+                activateLARK();
+            }
+        });
+        
+        function activateLARK() {
+            // Change to listening state
+            currentState = STATE_LISTENING;
+            micIndicator.classList.add('active');
+            larkCircle.style.borderColor = '#00A651';
+            larkCircle.classList.remove('pulse');
+            statusText.textContent = 'Listening...';
+            messageBox.textContent = 'I\'m listening. What can I help you with?';
+            
+            // Simulate processing after 2 seconds
+            setTimeout(() => {
+                currentState = STATE_PROCESSING;
+                larkCircle.style.borderColor = '#FFC72C';
+                statusText.textContent = 'Processing...';
+                
+                // Simulate response after 1.5 more seconds
+                setTimeout(() => {
+                    currentState = STATE_RESPONDING;
+                    larkCircle.style.borderColor = '#7030A0';
+                    statusText.textContent = 'Responding...';
+                    messageBox.textContent = 'You have the right to remain silent. Anything you say can and will be used against you in a court of law.';
+                    
+                    // Back to ready state after 5 seconds
+                    setTimeout(() => {
+                        currentState = STATE_READY;
+                        micIndicator.classList.remove('active');
+                        larkCircle.style.borderColor = '#0055aa';
+                        larkCircle.classList.add('pulse');
+                        statusText.textContent = 'Ready. Say "Hey LARK" to activate.';
+                        messageBox.textContent = 'Welcome to LARK. Say "Hey LARK" to activate.';
+                    }, 5000);
+                }, 1500);
+            }, 2000);
+        }
+        
+        // Simulate voice activation after 10 seconds for demo purposes
+        setTimeout(() => {
+            if (currentState === STATE_READY) {
+                activateLARK();
+            }
+        }, 10000);
+    </script>
+</body>
+</html>

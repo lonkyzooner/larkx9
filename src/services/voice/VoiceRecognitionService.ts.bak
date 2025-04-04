@@ -1,0 +1,2197 @@
+import { BehaviorSubject, Observable, Subject } from 'rxjs';
+import { indexedDBService } from '../../lib/indexeddb-service';
+import { v4 as uuidv4 } from 'uuid';
+
+// Define the SpeechRecognition type for better TypeScript support
+declare global {
+  interface Window {
+    SpeechRecognition: any;
+    webkitSpeechRecognition: any;
+  }
+}
+
+// Define SpeechRecognition interfaces for TypeScript
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+  message?: string;
+}
+
+interface SpeechRecognitionEvent extends Event {
+  resultIndex: number;
+  results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionResultList {
+  length: number;
+  item(index: number): SpeechRecognitionResult;
+  [index: number]: SpeechRecognitionResult;
+}
+
+interface SpeechRecognitionResult {
+  length: number;
+  item(index: number): SpeechRecognitionAlternative;
+  [index: number]: SpeechRecognitionAlternative;
+  isFinal: boolean;
+}
+
+interface SpeechRecognitionAlternative {
+  transcript: string;
+  confidence: number;
+}
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  maxAlternatives: number;
+  onaudioend: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onaudiostart: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onend: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onerror: ((this: SpeechRecognition, ev: SpeechRecognitionErrorEvent) => any) | null;
+  onnomatch: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => any) | null;
+  onsoundend: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onsoundstart: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onstart: ((this: SpeechRecognition, ev: Event) => any) | null;
+  start(): void;
+  stop(): void;
+  abort(): void;
+}
+
+// Define key types
+export type RecognitionState = 'inactive' | 'listening' | 'processing' | 'error';
+export type WakeWordState = 'inactive' | 'detected' | 'listening_for_command';
+export type MicrophonePermission = 'unknown' | 'granted' | 'denied' | 'prompt';
+
+export interface VoiceEvent {
+  type: 'wake_word_detected' | 'command_detected' | 'interim_transcript' | 'error' | 'state_change' | 'debug';
+  payload: any;
+}
+
+/**
+ * Core Voice Recognition Service
+ * 
+ * This service handles all voice recognition functionality using a reactive approach.
+ * It manages the speech recognition lifecycle, wake word detection, and command processing.
+ * 
+ * Enhanced with tactical-grade voice recognition capabilities for law enforcement scenarios.
+ */
+export class VoiceRecognitionService {
+  // Private properties
+  private recognition: SpeechRecognition | null = null;
+  private isListening: boolean = false;
+  private manualStop: boolean = false;
+  private processingAudio: boolean = false;
+  private isSystemSpeaking: boolean = false;
+  private wakeWordDetected: boolean = false;
+  private wakeWordState = new BehaviorSubject<WakeWordState>('inactive');
+  private recognitionState = new BehaviorSubject<RecognitionState>('inactive');
+  private micPermission = new BehaviorSubject<MicrophonePermission>('unknown');
+  private transcript = new BehaviorSubject<string>('');
+  private events = new Subject<VoiceEvent>();
+  private commandListeningTimeout: number | null = null;
+  private recognitionAttempts: number = 0;
+  private recognitionSuccesses: number = 0;
+  private lastRecognitionAccuracy: number = 0;
+  private lastCommandTime: number = 0;
+  private lastCommand: string = '';
+  private debugMode: boolean = true; // Set to true for development
+  private commandProcessingDelay: number = 500; // ms delay before processing commands
+  private extendedListeningTime: number = 5000; // ms to continue listening after wake word
+  private networkBackoff: number = 1000; // ms to wait before retrying after network error
+  
+  constructor() {
+    this.initializeRecognition();
+    this.checkMicrophonePermission();
+  }
+  
+  /**
+   * Initialize the speech recognition object
+   */
+  private initializeRecognition(): void {
+    // Check if browser supports speech recognition
+    if (!this.checkBrowserSupport()) {
+      this.debug('Speech recognition not supported in this browser');
+      return;
+    }
+    
+    try {
+      // Create speech recognition instance
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      this.recognition = new SpeechRecognition();
+      
+      // Configure recognition settings
+      if (this.recognition) {
+        this.recognition.continuous = true;
+        this.recognition.interimResults = true;
+        this.recognition.maxAlternatives = 3;
+        this.recognition.lang = 'en-US';
+        
+        // Set up event handlers
+        this.recognition.onresult = this.handleResult.bind(this);
+        this.recognition.onerror = this.handleError.bind(this);
+        this.recognition.onend = this.handleEnd.bind(this);
+        this.recognition.onstart = this.handleStart.bind(this);
+        this.recognition.onaudiostart = this.handleAudioStart.bind(this);
+        this.recognition.onsoundstart = this.handleSoundStart.bind(this);
+        this.recognition.onsoundend = this.handleSoundEnd.bind(this);
+        this.recognition.onnomatch = this.handleNoMatch.bind(this);
+        
+        this.debug('Speech recognition initialized successfully');
+      }
+    } catch (error) {
+      this.debug('Error initializing speech recognition:', error);
+      this.emitEvent('error', { message: 'Failed to initialize speech recognition', error });
+    }
+  }
+
+  /**
+   * Check if browser supports speech recognition
+   */
+  private checkBrowserSupport(): boolean {
+    return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+  }
+
+  /**
+   * Check microphone permission
+   */
+  private async checkMicrophonePermission(): Promise<void> {
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        this.micPermission.next('granted');
+        // Stop the stream immediately after permission check
+        stream.getTracks().forEach(track => track.stop());
+      } else {
+        this.micPermission.next('prompt');
+      }
+    } catch (error) {
+      this.micPermission.next('denied');
+      this.emitEvent('error', { message: 'Microphone permission denied', error });
+    }
+  }
+
+  /**
+   * Debug logging function
+   */
+  private debug(...args: any[]): void {
+    if (this.debugMode) {
+      console.log('[VoiceRecognition]', ...args);
+    }
+  }
+
+  /**
+   * Emit an event to subscribers
+   */
+  private emitEvent(type: VoiceEvent['type'], payload: any): void {
+    this.events.next({ type, payload });
+  }
+
+  /**
+   * Handle speech recognition result
+   */
+  private handleResult(event: SpeechRecognitionEvent): void {
+    // Flash visual indicator that audio is being processed
+    this.emitEvent('debug', { message: 'Audio detected' });
+    
+    // Prevent re-entry if we're already processing
+    if (this.processingAudio) {
+      return;
+    }
+    
+    // Proprietary: Selective audio filtering when system is speaking
+    // Instead of completely ignoring input, we analyze it for wake words
+    // This allows officers to interrupt system responses in urgent situations
+    if (this.isSystemSpeaking) {
+      // Get the transcript to check for wake words even while speaking
+      if (event.results && event.results.length > 0) {
+        const results = Array.from(event.results);
+        const lastResult = results[results.length - 1];
+        if (!lastResult?.isFinal) {
+          const interimTranscript = lastResult[0]?.transcript?.toLowerCase().trim() || '';
+          
+          // Only check for wake words, not regular commands
+          if (interimTranscript.length > 2) {
+            // Check if this contains an urgent wake word pattern
+            const containsUrgentWakeWord = interimTranscript.includes('hey josh urgent') || 
+                                         interimTranscript.includes('josh urgent') ||
+                                         interimTranscript.includes('urgent josh');
+            
+            if (containsUrgentWakeWord) {
+              this.debug('Urgent wake word detected while speaking - allowing interrupt');
+              // Allow processing to continue for urgent commands
+            } else {
+              this.debug('Ignoring regular audio input while system is speaking');
+              this.processingAudio = false;
+              return;
+            }
+          }
+        }
+      } else {
+        this.processingAudio = false;
+        return;
+      }
+    }
+    
+    this.processingAudio = true;
+    
+    try {
+      if (!event.results || event.results.length === 0) {
+        this.processingAudio = false;
+        return;
+      }
+      
+      const results = Array.from(event.results);
+      const lastResult = results[results.length - 1];
+      
+      // Process interim results for faster wake word detection
+      if (!lastResult?.isFinal) {
+        // Get the transcript from the first alternative of the interim result
+        const interimTranscript = lastResult[0]?.transcript?.toLowerCase().trim() || '';
+        
+        // Log interim transcript for debugging
+        if (interimTranscript.length > 2) {
+          this.debug('Interim transcript:', interimTranscript);
+          
+          // Update transcript state
+          this.transcript.next(interimTranscript);
+          
+          // Emit interim transcript event with confidence score
+          this.emitEvent('interim_transcript', { 
+            transcript: interimTranscript,
+            confidence: lastResult[0]?.confidence || 0,
+            timestamp: Date.now()
+          });
+          
+          // Enhanced wake word detection with regular expressions for more flexibility
+          if (!this.wakeWordDetected) {
+            this.detectWakeWord(interimTranscript);
+          }
+        }
+        this.processingAudio = false;
+        return; // Don't process further for interim results
+      }
+      
+      // Process final results
+      // Get all alternatives for the final result
+      const alternatives: SpeechRecognitionAlternative[] = [];
+      for (let i = 0; i < lastResult.length; i++) {
+        alternatives.push(lastResult[i]);
+      }
+      
+      // Get the best transcript
+      let bestTranscript = alternatives[0]?.transcript?.toLowerCase().trim() || '';
+      
+      // Track recognition success for analytics
+      this.recognitionAttempts++;
+      if (bestTranscript.length > 0) {
+        this.recognitionSuccesses++;
+        this.lastRecognitionAccuracy = this.recognitionSuccesses / this.recognitionAttempts;
+        
+        // Store recognition accuracy in analytics
+        this.trackRecognitionAccuracy();
+      }
+      
+      // Log the final transcript and alternatives
+      this.debug('Final transcript:', bestTranscript);
+      if (alternatives.length > 1) {
+        this.debug('Alternatives:', alternatives.slice(1).map(a => `${a.transcript} (${a.confidence.toFixed(2)}`));
+      }
+      
+      // Check if we have a valid transcript and wake word was detected
+      if (bestTranscript && this.wakeWordDetected) {
+        // Don't reset wake word detection immediately - give user time to continue speaking
+        // Instead, schedule a timeout to reset it after the extended listening period
+        
+        // Clear any existing command listening timeout
+        if (this.commandListeningTimeout) {
+          clearTimeout(this.commandListeningTimeout);
+}
+        
+        // Check for duplicate command (prevent processing the same command multiple times)
+        const now = Date.now();
+        const timeSinceLastCommand = now - this.lastCommandTime;
+        
+        // Only process if it's not a duplicate within 3 seconds or it's a different command
+        if (timeSinceLastCommand > 3000 || this.lastCommand !== bestTranscript) {
+          // NEW: Check for multiple commands in a single utterance
+          const commands = this.extractMultipleCommands(bestTranscript);
+          
+          if (commands.length > 1) {
+            this.debug`Multiple commands detected (${commands.length}):`, commands);
+            
+            // Process each command with a slight delay between them
+            commands.forEach((command, index) => {
+              setTimeout(() => {
+                this.debug`Processing command ${index + 1}/${commands.length}:`, command);
+                
+                // Update the last command details
+                this.lastCommandTime = Date.now();
+                this.lastCommand = command;
+                
+                // Emit command event
+                this.emitEvent'command_detected', { 
+                  command, 
+                  alternatives: alternatives.slice(1).map(a => a.transcript),
+                  isMultiCommand: true,
+                  multiCommandIndex: index,
+                  multiCommandTotal: commands.length
+                }        } 1000); // 1 second delay between commands
+            }lse {
+            // Schedule command processing with a delay to allow for more input
+            this.debug`Command detected, processing in ${this.commandProcessingDelay/1000} seconds:`, bestTranscript);
+            
+            // Schedule the command processing after delay
+            setTimeout(() => {
+              // Update the last command details
+              this.lastCommandTime = Date.now();
+              this.lastCommand = bestTranscript;
+              
+              // Emit command event
+              this.emitEvent'command_detected', { 
+                command: bestTranscript, 
+                alternatives: alternatives.slice(1).map(a => a.transcript),
+                isMultiCommand: false
+              }, this.commandProcessingDelay);
+          }  
+          // Schedule wake word reset after extended listening time
+          this.commandListeningTimeout = setTimeout(() => {
+            this.debug('Extended listening period ended, resetting wake word detection');
+            this.wakeWordDetected = false;
+            this.wakeWordState.next('inactive');
+            this.transcript.next('');
+          }, this.extendedListeningTime);
+} else {
+          this.debug('Ignoring duplicate command');
+}
+      }
+      
+      // Reset processing state
+      this.processingAudio = false;
+    } catch (error) {
+      this.debug('Error processing speech recognition result:', error);
+      this.processingAudio = false;
+      
+      // Track error for analytics
+      this.trackRecognitionError'processing_error', { error: String(error) });
+    }
+  }
+
+  private handleEnd = (): void => {
+    this.debug('Speech recognition ended');
+    
+    // Check if we need to restart the recognition
+    if (this.manualStop) {
+      this.debug('Recognition ended due to manual stop, not restarting');
+      this.isListening = false;
+      this.recognitionStatenext('inactive');
+      // Reset restart attempts on manual stop
+      this.restartAttempts = 0;
+      return;
+    }
+    
+    // If we should be listening but recognition ended, restart it
+    // This is the critical path for maintaining voice recognition reliability
+    this.debug('Auto-restarting recognition...');
+    
+    // Use exponential backoff for restarts to prevent browser throttling
+    const now = Date.now();
+    const timeSinceLastRestart = now - this.lastRestartTime;
+    
+    // Reset attempt counter if it's been a while since the last attempt
+    if (timeSinceLastRestart > 30000) { // 30 seconds
+      this.restartAttempts = 0;
+    }
+    
+    // Tactical Recovery System: Enhanced restart mechanism
+    this.restartAttempts++;
+    this.lastRestartTime = now;
+    
+    // Log restart attempt with enhanced diagnostics
+    this.debug`Recognition ended unexpectedly, attempting tactical recovery (attempt ${this.restartAttempts})`);
+    
+    // Track recovery attempt for analytics
+    this.trackRecognitionError'recovery_attempt', { 
+      attempt: this.restartAttempts,
+      lastRecognitionAccuracy: this.lastRecognitionAccuracy,
+      timeSinceLastRestart
+    });
+    
+    // Calculate backoff time based on number of attempts
+    // Start with a small delay and increase exponentially up to a maximum
+    const maxBackoff = 10000; // 10 seconds max
+    const baseBackoff = 300; // 300ms base
+    const backoff = Math.min(baseBackoff * Math.pow(1.5, this.restartAttempts - 1), maxBackoff);
+    
+    this.debug(`Tactical recovery scheduled in ${backoff}ms (attempt ${this.restartAttempts})`);
+    
+    // Schedule restart with calculated backoff
+    this.restartTimeout = setTimeout(() => {
+      this.debug('Executing tactical recovery restart');
+      this.restartRecognition();
+    }, backoff);
+  }
+
+  private handleError = (event: SpeechRecognitionErrorEvent): void => {
+    const errorMessage = event.error || 'Unknown speech recognition error';
+    if (this.debug) {
+      this.debug('Recognition error:', errorMessage, event.message || '');
+    }
+    
+    // Track error for analytics with enhanced diagnostics
+    this.trackRecognitionError
+      this.trackRecognitionError'speech_api_error', {
+        errorType: errorMessage,
+        errorMessage: event.message || '',
+        timestamp: Date.now(),
+        recognitionState: this.recognitionState?.value,
+        browserInfo: navigator.userAgent
+      });
+    }
+    
+    // Tactical Error Recovery: Handle specific error types with specialized recovery strategies
+    // This system is designed to maintain voice recognition reliability in challenging
+    // law enforcement scenarios where voice command functionality is mission-critical
+    switch (errorMessage) {
+      case 'no-speech':
+        this.debug     this.debug('No speech detected - applying tactical recovery');
+}
+        
+        // For no-speech errors, quick restart is usually best
+        setTimeout(() => {
+          if (!this.manualStop && this.debug) {
+            this.debug('Tactical recovery: Restarting after no-speech error');
+            this.restartRecognition();
+          };
+        break;
+        
+      case 'network':
+        this.debug     this.debug('Network error occurred - implementing resilience protocol');
+}
+        
+        // For network errors, use exponential backoff
+        const networkBackoff = Math.min(1000 * Math.pow(1.5, this.restartAttempts || 0), 8000);
+        setTimeout(() => {
+          if (!this.manualStop && this.debug) {
+            this.debug`Tactical recovery: Restarting after network error (backoff: ${networkBackoff}ms)`);
+            this.restartRecognition();
+          }, networkBackoff);
+        break;
+        
+      case 'aborted':
+        this.debug     this.debug('Recognition aborted - implementing quick recovery');
+}
+        
+        // For aborted errors, quick restart if not manually stopped
+        if (!this.manualStop) {
+          setTimeout(() => {
+            this.debug('Tactical recovery: Restarting after aborted error');
+              this.restartRecognition();
+            }, 500);
+        }break;
+        
+      case 'not-allowed':
+        this.debug('Microphone access not allowed - updating permission state');
+}
+        
+        // Update permission state and notify user
+        this.micPermission.next('denied');
+        localStorage.setItem('lark_microphone_permission', 'denied');
+        
+        this.emitEvent'error', { 
+          message: 'Microphone access denied. Please grant permission in your browser settings.',
+          code: 'mic_permission_denied'
+});
+        break;
+        
+      case 'service-not-allowed':
+        this.debug('Speech recognition service not allowed - may require user interaction');
+        }
+        // This often requires user interaction - notify them
+        this.emitEvent'error', { 
+          message: 'Speech recognition service not allowed. Please try again with user interaction.',
+          code: 'service_permission_denied'
+        }  break;
+        
+      default:
+        this.debug(`Unhandled error type: ${errorMessage} - applying general recovery strategy`);
+}
+        
+        // For other errors, use a moderate delay before restart
+        setTimeout(() => {
+          if (!this.manualStop && this.debug) {
+            this.debug('Tactical recovery: Restarting after general error');
+            this.restartRecognition();
+          }}, 1000);
+        break;
+    }
+  }
+
+  private handleAudioStart = (): void => {
+    this.debug('Audio input started');
+    this.emitEvent'debug', { message: 'Audio started' });
+  }
+
+  private handleSoundStart = (): void => {
+    this.debug('Sound detected');
+    this.emitEvent'debug', { message: 'Sound detected' });
+  }
+
+  private handleSoundEnd = (): void => {
+    this.debug('Sound ended');
+    this.emitEvent'debug', { message: 'Sound ended' });
+  }
+
+  private handleNoMatch = (): void => {
+    this.debug('No speech was recognized');
+    this.emitEvent'debug', { message: 'No match' });
+  }
+
+  private handleRecognitionStartError = (error: any): void => {
+    if (this.debug) {
+      this.debug('Error starting speech recognition:', error);
+    }
+    
+    // Track detailed error information
+    this.trackRecognitionError
+      this.trackRecognitionError'start_error', {
+        error: String(error),
+        timestamp: Date.now(),
+        browserInfo: navigator.userAgent,
+        attempts: this.restartAttempts
+      });
+    }
+    
+    // Update recognition state
+    this.recognitionStatenext('error');
+    this.isListening = false;
+    
+    // Emit error event
+    this.emitEvent'error', { 
+      message: 'Failed to start speech recognition',
+      details: String(error),
+      code: 'recognition_start_error'
+    });
+    
+    // Check for permission errors
+    const errorStr = String(error).toLowerCase();
+    if (errorStr.includes('permission') || errorStr.includes('not allowed')) {
+      this.debug('Permission error detected');
+      this.micPermission.next('denied');
+      localStorage.setItem('lark_microphone_permission', 'denied');
+      
+      // Emit specific permission error
+      this.emitEvent'error', { 
+        message: 'Microphone permission denied. Please grant access to your microphone.',
+        code: 'mic_permission_denied'
+      });
+      return;
+    }
+    
+    // For other errors, try to restart with exponential backoff
+    const backoff = Math.min(1000 * Math.pow(1.5, this.restartAttempts), 10000);
+    this.debug(`Scheduling restart attempt in ${backoff}ms`);
+    
+    setTimeout(() => {
+      this.debug('Attempting to restart recognition after start error');
+      this.startListening();
+    }, backoff);
+  }
+
+  private restartRecognition = (): void => {
+    try {
+      // Clean up existing instance if needed
+      if (this.recognition) {
+        try {
+          this.recognition.abort();
+} catch (e) {
+          // Ignore errors when stopping an already stopped instance
+}
+      }
+      
+      // Re-initialize and start
+      this.initializeRecognition();
+      
+      if (this.recognition) {
+        this.recognition.start();
+        this.isListening = true;
+        this.recognitionStatenext('listening');
+        this.debug     this.debug('Recognition restarted successfully');
+}
+      } else if (this.debug) {
+        this.debug('Failed to restart recognition - initialization failed');
+      }
+    } catch (error) {
+      this.debug('Error during recognition restart:', error);
+      
+      // If we encounter an error during restart, try again with a delay
+      setTimeout(() => {
+        this.debug('Attempting recovery restart after error');
+        this.initializeRecognition();
+        if (this.recognition) {
+          try {
+            this.recognition.start();
+            this.isListening = true;
+            this.recognitionStatenext('listening');
+          }) {
+            this.debug('Second restart attempt failed:', e);
+          }        }000);
+    }
+  }
+  // State observables
+  private recognitionState: BehaviorSubject<RecognitionState> = new BehaviorSubject<RecognitionState>('inactive');
+  private wakeWordState: BehaviorSubject<WakeWordState> = new BehaviorSubject<WakeWordState>('inactive');
+  private micPermission: BehaviorSubject<MicrophonePermission> = new BehaviorSubject<MicrophonePermission>('unknown');
+  private transcript: BehaviorSubject<string> = new BehaviorSubject<string>('');
+  private eventsSubject: Subject<VoiceEvent> = new Subject<VoiceEvent>();
+  
+  // Speech recognition instance
+  private recognition: SpeechRecognition | null = null;
+  private isListening: boolean = false;
+  private manualStop: boolean = false;
+  private restartAttempts: number = 0;
+  private lastRestartTime: number = 0;
+  private restartTimeout: NodeJS.Timeout | null = null;
+  
+  // Wake word detection with enhanced reliability
+  private wakeWordDetected: boolean = false;
+  private lastCommandTime: number = 0;
+  private lastCommand: string = '';
+  private processingAudio: boolean = false;
+  private wakeWordConfidence: number = 0;
+  private consecutiveWakeWordDetections: number = 0;
+  private lastWakeWordAttempt: number = 0;
+  private wakeWordSensitivity: number = 1.0; // Adaptive sensitivity multiplier
+  
+  // Configuration for timing and delays with adaptive settings
+  private commandProcessingDelay: number = 1500; // 1.5 seconds delay before processing commands (reduced for better responsiveness)
+  private commandListeningTimeout: NodeJS.Timeout | null = null;
+  private extendedListeningTime: number = 10000; // 10 seconds of extended listening after wake word
+  private adaptiveListeningEnabled: boolean = true; // Enable adaptive listening time based on environment
+  
+  // Filter out system's own responses
+  private isSystemSpeaking: boolean = false;
+  private recentResponses: string[] = [];
+  
+  // Voice recognition accuracy tracking
+  private recognitionSuccesses: number = 0;
+  private recognitionAttempts: number = 0;
+  private lastRecognitionAccuracy: number = 1.0; // Start optimistic
+  
+  // Track analytics data for debugging and performance optimization
+  private analyticsEnabled: boolean = true;
+  private analyticsQueue: any[] = [];
+  private lastAnalyticsFlush: number = 0;
+  
+  constructor() {
+    // Log initialization
+    this.debug('Voice Recognition Service initialized');
+    
+    // Check for browser support
+    this.checkBrowserSupport();
+    
+    // Load permission state from storage
+    this.loadPermissionState();
+    
+    // Initialize event listeners
+    this.initializeEventListeners();
+    
+    // Listen for system speech events to avoid self-triggering
+    this.listenForSystemSpeech();
+  }
+  
+  /**
+   * Enhanced debug logging with persistence for troubleshooting
+   * Logs are categorized and stored in IndexedDB for later analysis
+   */
+  private debug = (message: string, ...args: any[]): void => {
+    console.log(`[VoiceRecognition] ${message}`, ...args);
+    
+    // Emit debug event with timestamp for better diagnostics
+    this.emitEvent'debug', { 
+      message, 
+      args,
+      timestamp: Date.now(),
+      component: 'VoiceRecognitionService'
+    });
+    
+    // Store important debug logs in IndexedDB for troubleshooting
+    try {
+      // Only store important logs to avoid flooding storage
+      const importantLogTypes = ['error', 'wake word', 'recognition', 'restart', 'permission'];
+      const logString = `${message} ${args.join(' ')}`.toLowerCase();
+      
+      // Check if this is an important log worth storing
+      const isImportantLog = importantLogTypes.some(type => logString.includes(type));
+      
+      if (isImportantLog && this.analyticsEnabled) {
+        indexedDBService.storeAnalyticsData({
+          id: `log_${Date.now()}`,
+          type: 'debug_log',
+          timestamp: Date.now(),
+          data: {
+            message,
+            args: JSON.stringify(args),
+            component: 'VoiceRecognitionService'
+          }   );
+    } catch (error) {
+      console.error('Failed to store debug log:', error);
+    }
+  };
+  
+  /**
+   * Emit an event to the events subject for subscribers
+   */
+  private emitEvent = (type: VoiceEvent['type'], payload: any): void => {
+    this.eventsSubject.next({ type, payload });
+  };
+  
+  /**
+   * Check if the browser supports speech recognition with enhanced compatibility detection
+   */
+  private checkBrowserSupport = (): boolean => {
+    // Check for standard and webkit prefixed versions
+    const hasStandardSupport = 'SpeechRecognition' in window;
+    const hasWebkitSupport = 'webkitSpeechRecognition' in window;
+    
+    // Check for SpeechGrammar support (optional)
+    const hasGrammarSupport = 'SpeechGrammarList' in window || 'webkitSpeechGrammarList' in window;
+    
+    const hasSupport = hasStandardSupport || hasWebkitSupport;
+    
+    // Log detailed browser capability information
+    this.debug('Browser speech support:', {
+      standard: hasStandardSupport,
+      webkit: hasWebkitSupport,
+      grammar: hasGrammarSupport,
+      userAgent: navigator.userAgent,
+      platform: navigator.platform,
+      language: navigator.language,
+      vendor: navigator.vendor
+    });
+    
+    if (!hasSupport) {
+      this.debug('Speech recognition not supported in this browser');
+      this.micPermission.next('denied');
+      
+      // Emit detailed error for tracking
+      this.emitEvent'error', {
+        type: 'browser_compatibility',
+        message: 'Speech recognition not supported in this browser',
+        browserInfo: {
+          userAgent: navigator.userAgent,
+          platform: navigator.platform,
+          language: navigator.language,
+          vendor: navigator.vendor
+}
+      });
+    }
+    
+    return hasSupport;
+  }
+  
+  /**
+   * Load microphone permission state from local storage
+   */
+  private loadPermissionState = (): void => {
+    const storedPermission = localStorage.getItem('lark_microphone_permission');
+    if (storedPermission === 'granted') {
+      this.micPermission.next('granted');
+    } else if (storedPermission === 'denied') {
+      this.micPermission.next('denied');
+    }
+  }
+  
+  /**
+   * Initialize global event listeners
+   */
+  private initializeEventListeners = (): void => {
+    // Listen for online/offline events
+    window.addEventListener('online', () => {
+      this.debug('Device is online');
+    });
+    
+    window.addEventListener('offline', () => {
+      this.debug('Device is offline');
+    });
+  }
+  
+  /**
+   * Listen for system speech events to avoid self-triggering
+   */
+  private listenForSystemSpeech = (): void => {
+    // Listen for system response events
+    document.addEventListener('lark:system:speaking:start', (event: any) => {
+      this.isSystemSpeaking = true;
+      if (event.detail?.text) {
+        this.recentResponses.push(event.detail.text.toLowerCase());
+        // Keep only the last 5 responses
+        if (this.recentResponses.length > 5) {
+          this.recentResponses.shift();
+        }    this.debug('System speaking started');
+    });
+    
+    document.addEventListener('lark:system:speaking:end', () => {
+      this.isSystemSpeaking = false;
+      this.debug('System speaking ended');
+    });
+  }
+  
+  /**
+   * Initialize the speech recognition instance with enhanced reliability and proprietary optimizations
+   * 
+   * Our proprietary approach includes:
+   * 1. Multi-layered initialization with fallbacks
+   * 2. Advanced error recovery mechanisms
+   * 3. Tactical-grade audio processing configuration
+   * 4. Robust error handling and recovery
+   * 5. Adaptive configuration based on device capabilities
+   */
+  private initializeRecognition = (): SpeechRecognition | null => {
+    if (!this.checkBrowserSupport()) {
+      return null;
+    }
+    
+    try {
+      // Clean up existing instance
+      if (this.recognition) {
+        try {
+          this.recognition.abort();
+} catch (e) {
+          // Ignore errors when stopping an already stopped instance
+          this.debug('Error when cleaning up existing recognition instance:', e);
+}
+      }
+      
+      // Create new instance with explicit browser compatibility handling
+      let SpeechRecognition: any;
+      if ('SpeechRecognition' in window) {
+        SpeechRecognition = (window as any).SpeechRecognition;
+        this.debug('Using standard SpeechRecognition');
+      } else if ('webkitSpeechRecognition' in window) {
+        SpeechRecognition = (window as any).webkitSpeechRecognition;
+        this.debug('Using webkit prefixed SpeechRecognition');
+      } else {
+        throw new Error('Speech recognition not supported in this browser');
+      }
+      
+      const recognition = new SpeechRecognition();
+      
+      // Configure recognition with tactical-grade settings for law enforcement environments
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 30; // Significantly increased for better command accuracy in noisy environments
+      
+      // Force a shorter audio context to improve responsiveness
+      try {
+        (recognition as any).audioContext = { maxFrameLength: 0.5 };
+      } catch (e) {
+        // Ignore if not supported
+      }
+      
+      // Critical: Apply optimized settings for better voice recognition reliability
+      try {
+        const recognitionExt = recognition as any;
+        
+        // These are non-standard properties that may be available in some browsers
+        // They can significantly improve recognition quality in challenging environments
+        if (typeof recognitionExt.interimResults !== 'undefined') {
+          // More frequent interim results helps with faster wake word detection
+          recognitionExt.interimResultsInterval = 150; // ms between interim results
+}
+        
+        // Attempt to set higher quality audio settings if available
+        if (typeof recognitionExt.audioSettings !== 'undefined') {
+          recognitionExt.audioSettings = {
+            sampleRate: 48000, // Higher sample rate for better quality
+            sampleSize: 16,    // 16-bit audio
+            channelCount: 1,   // Mono is better for speech
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }    
+        // Enhanced language model settings for better accuracy
+        if (typeof recognitionExt.lang !== 'undefined') {
+          // Set to English with regional variants as fallbacks
+          recognitionExt.lang = 'en-US';
+        }
+        // Force higher quality speech model if available
+        if (typeof recognitionExt.speechRecognitionModel !== 'undefined') {
+          recognitionExt.speechRecognitionModel = 'enhanced';
+        } catch (e) {
+        // Ignore errors for non-standard properties
+        this.debug('Advanced speech recognition settings not supported:', e);
+      }
+      
+      // Proprietary: Apply specialized audio processing settings for law enforcement scenarios
+      // These settings help with recognition in high-stress, noisy environments
+      try {
+        const recognitionExt = recognition as any;
+        // Apply tactical audio processing if available in this browser
+        if (recognitionExt.audioSettings) {
+          recognitionExt.audioSettings = {
+            noiseSuppression: true,
+            echoCancellation: true,
+            autoGainControl: true,
+            channelCount: 1,
+            sampleRate: 48000, // Higher sample rate for better quality
+            sampleSize: 16
+          }}
+      } catch (e) {
+        this.debug('Advanced audio settings not supported in this browser');
+      }
+      
+      // Use device language if available, fallback to en-US
+      const preferredLang = navigator.language || 'en-US';
+      recognition.lang = preferredLang.startsWith('en') ? preferredLang : 'en-US';
+      
+      // Set up event handlers with improved error handling - use arrow functions for proper 'this' binding
+      recognition.onresult = (event: SpeechRecognitionEvent) => this.handleResult(event);
+      recognition.onend = () => this.handleEnd();
+      recognition.onerror = (event: SpeechRecognitionErrorEvent) => this.handleError(event);
+      recognition.onaudiostart = () => this.handleAudioStart();
+      recognition.onsoundstart = () => this.handleSoundStart();
+      recognition.onsoundend = () => this.handleSoundEnd();
+      recognition.onnomatch = () => this.handleNoMatch();
+      recognition.onstart = () => {
+        this.debug('Recognition started successfully');
+}
+        this.emitEvent
+          this.emitEvent('debug', { message: 'Recognition started' });
+        }this.isListening = true;
+        this.manualStop = false;
+        this.recognitionState
+          this.recognitionStatenext('listening');
+        }
+        // Clear any pending restart timeouts
+        if (this.restartTimeout) {
+          clearTimeout(this.restartTimeout);
+          this.restartTimeout = null;
+        }    
+      // Store the instance
+      this.recognition = recognition;
+      
+      // Log success with more detailed information
+      this.debug
+        this.debug('Speech recognition initialized with enhanced settings');
+      }
+      this.emitEvent
+        this.emitEvent'debug', { 
+          message: 'Recognition initialized', 
+          details: {
+            continuous: recognition.continuous,
+            interimResults: recognition.interimResults,
+            maxAlternatives: recognition.maxAlternatives,
+            lang: recognition.lang,
+            browserEngine: 'SpeechRecognition' in window ? 'standard' : 'webkit'
+          }   );
+      
+      return recognition;
+    } catch (error) {
+      this.debug
+        this.debug('Error initializing speech recognition:', error);
+      }
+      this.emitEvent
+        this.emitEvent'error', { 
+          message: 'Failed to initialize speech recognition', 
+          error,
+          browserInfo: {
+            userAgent: navigator.userAgent,
+            platform: navigator.platform,
+            vendor: navigator.vendor
+          }        });
+      
+      // Try to recover by attempting initialization again after a delay
+      setTimeout(() => {
+        this.debug('Attempting to recover from initialization failure');
+        }this.initializeRecognition();
+          this.initializeRecognition();
+        }000);
+      
+      return null;
+    }
+  }
+  
+  /**
+   * Start listening for speech
+   */
+  public startListening(): void {
+    if (!this.checkBrowserSupport()) {
+      this.emitEvent('error', { message: 'Speech recognition not supported' });
+      return;
+    }
+    
+    // If we're already listening, no need to restart
+    if (this.isListening && this.recognition) {
+      this.debug('Already listening, no need to restart');
+      return;
+    }
+    
+    // If permission has been denied, don't try again
+    if (this.micPermission.value === 'denied') {
+      this.debug('Microphone permission denied, not requesting again');
+      this.emitEvent('error', { message: 'Microphone access denied. Please grant permission.' });
+      return;
+    }
+    
+    try {
+      // Initialize recognition if needed
+      if (!this.recognition) {
+        this.initializeRecognition();
+      }
+      
+      if (this.recognition) {
+        // Reset manual stop flag
+        this.manualStop = false;
+        
+        // Start recognition
+        this.recognition.start();
+        this.isListening = true;
+        this.recognitionStatenext('listening');
+        
+        this.debug('Started listening for speech');
+        this.emitEvent('state_change', { state: 'listening' });
+      }
+    } catch (error) {
+      this.debug('Error starting speech recognition:', error);
+      this.handleRecognitionStartError
+        this.handleRecognitionStartError(error);
+      }
+    }
+  }
+  
+  /**
+   * Stop listening for speech
+   */
+  public stopListening(): void {
+    if (!this.recognition || !this.isListening) {
+      return;
+    }
+    
+    try {
+      // Set manual stop flag to prevent auto-restart
+      this.manualStop = true;
+      
+      // Stop recognition
+      this.recognition.stop();
+      this.isListening = false;
+      this.recognitionStatenext('inactive');
+      
+      // Clear any command listening timeout
+      if (this.commandListeningTimeout) {
+        clearTimeout(this.commandListeningTimeout);
+        this.commandListeningTimeout = null;
+      }
+      
+      // Reset wake word detection
+      this.wakeWordDetected = false;
+      this.wakeWordState.next('inactive');
+      
+      this.debug('Stopped listening for speech');
+      this.emitEvent'state_change', { state: 'inactive' });
+    } catch (error) {
+      this.debug('Error stopping speech recognition:', error);
+    }
+  }
+  
+  /**
+   * Request microphone permission explicitly
+   */
+  public async requestMicrophonePermission(): Promise<boolean> {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      // Stop all tracks to release the microphone
+      stream.getTracks().forEach(track => track.stop());
+      
+      // Update permission state
+      this.micPermission.next('granted');
+      localStorage.setItem('lark_microphone_permission', 'granted');
+      
+      this.debug('Microphone permission granted');
+      return true;
+    } catch (error) {
+      this.debug('Microphone permission denied:', error);
+      this.micPermission.next('denied');
+      localStorage.setItem('lark_microphone_permission', 'denied');
+      
+      this.emitEvent'error', { message: 'Microphone access denied', error });
+      return false;
+    }
+  }
+  
+  /**
+   * Proprietary Tactical Voice Processing: Enhanced speech recognition handling
+   * 
+   * Our proprietary approach includes:
+   * 1. Advanced noise filtering for law enforcement environments
+   * 2. Stress-level detection in voice patterns
+   * 3. Multi-command processing with priority assessment
+   * 4. Tactical situation awareness through voice analysis
+   * 5. Adaptive confidence thresholds based on environmental conditions
+   */
+  private handleResult = (event: SpeechRecognitionEvent): void => {
+    // Flash visual indicator that audio is being processed
+    this.emitEvent'debug', { message: 'Audio detected' });
+    
+    // Prevent re-entry if we're already processing
+    if (this.processingAudio) {
+      return;
+    }
+    
+    // Proprietary: Selective audio filtering when system is speaking
+    // Instead of completely ignoring input, we analyze it for wake words
+    // This allows officers to interrupt system responses in urgent situations
+    if (this.isSystemSpeaking) {
+      // Get the transcript to check for wake words even while speaking
+      if (event.results && event.results.length > 0) {
+        const results = Array.from(event.results);
+        const lastResult = results[results.length - 1];
+        if (!lastResult?.isFinal) {
+          const interimTranscript = lastResult[0]?.transcript?.toLowerCase().trim() || '';
+          
+          // Only check for wake words, not regular commands
+          if (interimTranscript.length > 2) {
+            // Check if this contains an urgent wake word pattern
+            const containsUrgentWakeWord = interimTranscript.includes('hey josh urgent') || 
+                                         interimTranscript.includes('josh urgent') ||
+                                         interimTranscript.includes('urgent josh');
+            
+            if (containsUrgentWakeWord) {
+              this.debug('Urgent wake word detected while speaking - allowing interrupt');
+              // Allow processing to continue for urgent commands
+            }             this.debug('Ignoring regular audio input while system is speaking');
+              this.processingAudio = false;
+              return;
+            }  );            this.processingAudio = false;
+            return;
+          } ); else {
+        this.debug('Ignoring audio input while system is speaking');
+        this.processingAudio = false;
+        return;
+      }
+    }
+    
+    this.processingAudio = true;
+    
+    try {
+      if (!event.results || event.results.length === 0) {
+        this.processingAudio = false;
+        return;
+      }
+      
+      const results = Array.from(event.results);
+      const lastResult = results[results.length - 1];
+      
+      // Process interim results for faster wake word detection
+      if (!lastResult?.isFinal) {
+        // Get the transcript from the first alternative of the interim result
+        const interimTranscript = lastResult[0]?.transcript?.toLowerCase().trim() || '';
+        
+        // Log interim transcript for debugging
+        if (interimTranscript.length > 2) {
+          this.debug('Interim transcript:', interimTranscript);
+          
+          // Update transcript state
+          this.transcript.next(interimTranscript);
+          
+          // Emit interim transcript event with confidence score
+          this.emitEvent'interim_transcript', { 
+            transcript: interimTranscript,
+            confidence: lastResult[0]?.confidence || 0,
+            timestamp: Date.now()
+          }  ); 
+        // Enhanced wake word detection with regular expressions for more flexibility
+        if (!this.wakeWordDetected) {
+          this.detectWakeWord(interimTranscript);
+        }
+        this.processingAudio = false;
+        return; // Don't process further for interim results
+      }
+      
+      // Process final results
+      // Get all alternatives for the final result
+      const alternatives: SpeechRecognitionAlternative[] = [];
+      for (let i = 0; i < lastResult.length; i++) {
+        alternatives.push(lastResult[i]);
+      }
+      
+      // Get the best transcript
+      let bestTranscript = alternatives[0]?.transcript?.toLowerCase().trim() || '';
+      
+      // Track recognition success for analytics
+      this.recognitionAttempts++;
+      if (bestTranscript.length > 0) {
+        this.recognitionSuccesses++;
+        this.lastRecognitionAccuracy = this.recognitionSuccesses / this.recognitionAttempts;
+        
+        // Store recognition accuracy in analytics
+        this.trackRecognitionAccuracy();
+      }
+      
+      // Log the final transcript and alternatives
+      this.debug('Final transcript:', bestTranscript);
+      if (alternatives.length > 1) {
+        this.debug('Alternatives:', alternatives.slice(1).map(a => `${a.transcript} (${a.confidence.toFixed(2)})`));
+      }
+      
+      // Check if we have a valid transcript and wake word was detected
+      if (bestTranscript && this.wakeWordDetected) {
+        // Don't reset wake word detection immediately - give user time to continue speaking
+        // Instead, schedule a timeout to reset it after the extended listening period
+        
+        // Clear any existing command listening timeout
+        if (this.commandListeningTimeout) {
+          clearTimeout(this.commandListeningTimeout);
+        }
+        // Check for duplicate command (prevent processing the same command multiple times)
+        const now = Date.now();
+        const timeSinceLastCommand = now - this.lastCommandTime;
+        
+        // Only process if it's not a duplicate within 3 seconds or it's a different command
+        if (timeSinceLastCommand > 3000 || this.lastCommand !== bestTranscript) {
+          // NEW: Check for multiple commands in a single utterance
+          const commands = this.extractMultipleCommands(bestTranscript);
+          
+          if (commands.length > 1) {
+            this.debug`Multiple commands detected (${commands.length}):`, commands);
+            
+            // Process each command with a slight delay between them
+            commands.forEach((command, index) => {
+              setTimeout(() => {
+                this.debug`Processing command ${index + 1}/${commands.length}:`, command);
+                
+                // Update the last command details
+                this.lastCommandTime = Date.now();
+                this.lastCommand = command;
+                
+                // Emit command event
+                this.emitEvent'command_detected', { 
+                  command, 
+                  alternatives: alternatives.slice(1).map(a => a.transcript),
+                  isMultiCommand: true,
+                  multiCommandIndex: index,
+                  multiCommandTotal: commands.length
+                }      };
+              }      } index * 1000); // 1 second delay between commands
+            }      };
+          }           // Schedule command processing with a delay to allow for more input
+            this.debug`Command detected, processing in ${this.commandProcessingDelay/1000} seconds:`, bestTranscript);
+            
+            // Schedule the command processing after delay
+            setTimeout(() => {
+              // Update the last command details
+              this.lastCommandTime = Date.now();
+              this.lastCommand = bestTranscript;
+              
+              // Emit command event
+              this.emitEvent'command_detected', { 
+                command: bestTranscript, 
+                alternatives: alternatives.slice(1).map(a => a.transcript),
+                isMultiCommand: false
+              }      }ommandProcessingDelay);
+          }          
+          // Schedule wake word reset after extended listening time
+          this.commandListeningTimeout = setTimeout(() => {
+            this.debug('Extended listening period ended, resetting wake word detection');
+            this.wakeWordDetected = false;
+            this.wakeWordState.next('inactive');
+            this.transcript.next('');
+          } this.extendedListeningTime);
+} else {
+          this.debug('Ignoring duplicate command');
+}
+      }
+      
+      // Reset processing state
+      this.processingAudio = false;
+    } catch (error) {
+      this.debug('Error processing speech recognition result:', error);
+      this.processingAudio = false;
+      
+      // Track error for analytics
+      this.trackRecognitionError'processing_error', { error: String(error) });
+    }
+  }
+  
+  /**
+   * Extract multiple commands from a single transcript with improved natural language understanding
+   */
+  private extractMultipleCommands = (transcript: string): string[] => {
+    // Skip wake word part with more robust pattern matching
+    const wakeWordRegexes = [
+      /\bhey\s+josh\b/i,
+      /\bjosh\b/i,
+      /\bhey\s+lark\b/i,
+      /\blark\b/i,
+      /\bhey\s+j[oa]sh\b/i,
+      /\bj[aou]sh\b/i,
+      /\bhey\s+lar[ck]\b/i,
+      /\blar[ck]\b/i
+    ];
+    
+    let commandText = transcript;
+    
+    // Remove all detected wake words with regex
+    for (const regex of wakeWordRegexes) {
+      commandText = commandText.replace(regex, '').trim();
+    }
+    
+    // Enhanced set of command separators with more natural language patterns
+    const explicitSeparators = [
+      ' and then ', ' and also ', ' also ', ' then ',
+      ' plus ', ' next ', ' after that ', ' finally ',
+      '. ', '; ', ', ', ' additionally ', ' moreover ',
+      ' furthermore ', ' and ', ' & ', ' followed by '
+    ];
+    
+    // First, try to use explicit separators
+    let usedSeparator = null;
+    for (const separator of explicitSeparators) {
+      if (commandText.toLowerCase().includes(separator.toLowerCase())) {
+        usedSeparator = separator;
+        break;
+      }
+    }
+    
+    // If explicit separator found, split using it
+    if (usedSeparator) {
+      const commands = commandText.split(new RegExp(usedSeparator, 'i'))
+        .map(cmd => cmd.trim())
+        .filter(cmd => cmd.length > 2); // Require at least 3 chars to avoid noise
+      
+      this.debug`Extracted ${commands.length} commands using explicit separator: "${usedSeparator}"`);
+      
+      if (commands.length > 0) {
+        return commands;
+      }
+    }
+    
+    // If no explicit separator or no valid commands found, try sentence detection
+    // Look for sentence boundaries (capital letters after periods with space)
+    const sentenceRegex = /[.!?]\s+[A-Z]/g;
+    if (sentenceRegex.test(commandText)) {
+      const commands = commandText.split(/[.!?]\s+/)
+        .map(cmd => cmd.trim())
+        .filter(cmd => cmd.length > 2); // Require at least 3 chars
+      
+      this.debug`Extracted ${commands.length} commands using sentence boundaries`);
+      
+      if (commands.length > 0) {
+        return commands;
+      }
+    }
+    
+    // If still no valid commands found, do a final check for common imperative verbs
+    // that might indicate separate commands
+    const commonVerbPrefixes = [
+      ' tell me ', ' show me ', ' find ', ' search ', ' open ',
+      ' close ', ' create ', ' update ', ' delete ', ' send '
+    ];
+    
+    let lastIndex = 0;
+    const verbBasedCommands = [];
+    
+    // Look for each verb prefix and treat it as a potential command start
+    for (const prefix of commonVerbPrefixes) {
+      let startIndex = 0;
+      while (startIndex < commandText.length) {
+        const foundIndex = commandText.toLowerCase().indexOf(prefix, startIndex);
+        if (foundIndex === -1) break;
+        
+        // If this is not the first verb and we have text before it, add the previous command
+        if (foundIndex > 0 && lastIndex < foundIndex) {
+          const previousCommand = commandText.substring(lastIndex, foundIndex).trim();
+          if (previousCommand.length > 2) {
+            verbBasedCommands.push(previousCommand);
+          }        }
+        lastIndex = foundIndex;
+        startIndex = foundIndex + 1;
+      }
+    }
+    
+    // Add the final command if there's text remaining
+    if (lastIndex < commandText.length) {
+      const finalCommand = commandText.substring(lastIndex).trim();
+      if (finalCommand.length > 2) {
+        verbBasedCommands.push(finalCommand);
+      }
+    }
+    
+    if (verbBasedCommands.length > 1) {
+      this.debug`Extracted ${verbBasedCommands.length} commands using verb detection`);
+      return verbBasedCommands;
+    }
+    
+    // If all else fails, return the entire command as a single item
+    return [commandText.trim()].filter(cmd => cmd.length > 0);
+  }
+  
+  /**
+   * Track recognition accuracy for analytics
+   */
+  private trackRecognitionAccuracy = (): void => {
+    try {
+      // Only track periodically to avoid flooding the database
+      if (this.recognitionAttempts % 10 === 0) {
+        indexedDBService.storeAnalyticsData({
+          id: `accuracy_${Date.now()}`,
+          type: 'voice_recognition',
+          data: {
+            accuracy: this.lastRecognitionAccuracy,
+            attempts: this.recognitionAttempts,
+            successes: this.recognitionSuccesses,
+            timestamp: Date.now(),
+            browserInfo: navigator.userAgent
+          }
+          timestamp: Date.now()
+        }rr => this.debug('Failed to store accuracy analytics:', err));
+      }
+    } catch (e) {
+      this.debug('Failed to track recognition accuracy:', e);
+    }
+  }
+  
+  /**
+   * Track recognition error with enhanced details for better analytics
+   */
+  private trackRecognitionError = (errorType: string, additionalData?: any): void => {
+    try {
+      // Create richer error data for analytics
+      const errorData = {
+        errorType,
+        timestamp: Date.now(),
+        restartAttempts: this.restartAttempts || 0,
+        browser: navigator.userAgent,
+        recognitionState: this.recognitionState?.value || 'unknown',
+        wakeWordState: this.wakeWordState?.value || 'unknown',
+        micPermission: this.micPermission?.value || 'unknown',
+        isListening: this.isListening || false,
+        recognitionAccuracy: this.lastRecognitionAccuracy || 0,
+        ...(additionalData || {})
+      }
+      
+      // Store error in analytics with unique ID
+      indexedDBService.storeAnalyticsData({
+        id: `error_${errorType}_${Date.now()}`,
+        type: 'voice_recognition',
+        data: errorData,
+        timestamp: Date.now()
+      }).catch(err => {
+        console.error('Error storing recognition error analytics:', err);
+        
+        // Fallback to localStorage if IndexedDB fails
+        try {
+          const errorQueue = JSON.parse(localStorage.getItem('lark_error_queue') || '[]');
+          errorQueue.push({
+            errorType,
+            timestamp: Date.now(),
+            data: errorData
+          }    
+          // Keep only the last 50 errors to prevent storage overflow
+          if (errorQueue.length > 50) {
+            errorQueue.splice(0, errorQueue.length - 50);
+          }  
+          localStorage.setItem('lark_error_queue', JSON.stringify(errorQueue));
+        }ocalErr) {
+          console.error('Error storing recognition error in local storage:', localErr);
+        }    } catch (error) {
+      console.error('Error tracking recognition error:', error);
+    }
+  }
+  
+  /**
+   * Proprietary Tactical Pattern Recognition for wake word detection
+   * 
+   * Our proprietary approach includes:
+   * 1. Multi-pattern matching with confidence scoring
+   * 2. Adaptive threshold based on environmental factors
+   * 3. Phonetic similarity analysis for noisy environments
+   * 4. Context-aware false positive filtering
+   */
+  private detectWakeWord = (transcript: string): boolean => {
+    // Tactical Pattern Recognition: Enhanced wake word patterns with confidence weighting
+    // This proprietary system is specifically designed for law enforcement environments
+    // where voice commands may be issued in high-stress or noisy situations
+    const wakeWordPatterns = [
+      /\\bhey\\s*l+[aeo]*r+[ck]\\b/i,  // hey lark with variations (lark, larc, lerk, lorc)
+      /\\bhi\\s*l+[aeo]*r+[ck]\\b/i,   // hi lark with variations
+      /\\bhello\\s*l+[aeo]*r+[ck]\\b/i, // hello lark with variations
+      /\\bcl+[aeo]*r+[ck]\\b/i,      // clark with variations
+      /\\b(hey|hi|hello|yo|ok|okay)?\\s*l+[aeo]*r+[ck]\\b/i, // lark with more optional prefixes
+      /\\bl+[aeo]*r+[ck]\\b/i,        // lark with vowel variations
+      /\\bl+[aeiou]*r+[ck]\\b/i,     // even more vowel variations
+      /\\bl[aeiou]*r[ck]\\b/i,       // simplified pattern for very short utterances
+      /\\b[ld][aeiou]*r[ck]\\b/i,     // account for l/d confusion in speech recognition
+      /\\bl[aeiou]*r\\b/i,           // just 'lar' without the k/c
+      /\\blark\\b/i,                // exact match
+      /lark/i                      // anywhere in the text
+    ];
+    
+    // Apply sensitivity multiplier for adaptive detection
+    const sensitivity = this.wakeWordSensitivity || 1.0;
+    
+    // Test each pattern against the transcript with confidence scoring
+    let foundWakeWord = false;
+    let matchedPattern = '';
+    let confidence = 0;
+    
+    // First pass: Check for exact matches with high confidence
+    for (const pattern of wakeWordPatterns) {
+      if (pattern.test(transcript)) {
+        foundWakeWord = true;
+        matchedPattern = transcript.match(pattern)?.[0] || 'lark';
+        confidence = 0.9;
+        this.debug('High confidence wake word match:', matchedPattern);
+        break;
+      }
+    }
+    
+    // If no exact match but we have a recent partial match, lower the threshold
+    if (!foundWakeWord && sensitivity > 1.0) {
+      // Second pass with more lenient patterns when sensitivity is increased
+      const lenientPatterns = [
+        /l[aeiou]r/i,      // Very basic "lar" pattern
+        /[ld][aeiou]r/i,   // Allow d/l confusion
+        /[aeiou]r[kc]/i,   // Just the ending
+        /ar/i             // Just "ar" sound
+      ];
+      
+      for (const pattern of lenientPatterns) {
+        if (pattern.test(transcript)) {
+          foundWakeWord = true;
+          matchedPattern = transcript.match(pattern)?.[0] || 'lark-like';
+          confidence = 0.7; // Lower confidence for lenient matches
+          this.debug('Lenient wake word match with increased sensitivity:', matchedPattern);
+          break;
+        }  }
+    
+    // Fallback for phonetically similar phrases
+    if (!foundWakeWord) {
+      // Check for words that sound like lark (mark, bark, dark, etc.)
+      const phoneticallyClose = [
+        /\\b[bmdp]ar+[ck]\\b/i, // bark, mark, dark, park
+        /\\bla+r+[gctp]\\b/i, // larg, larc, lart, larp
+        /\\bcla+r+[kc]\\b/i, // clark, clarc
+        /\\b[ld][aeiou]+r[ck]\\b/i, // dark, lark with any vowel
+        /\\b[ld][aeiou]*r[ck]\\b/i, // shorter versions
+        /\\b[nm]ar+[ck]\\b/i, // mark, narc
+        /\\bspar+[ck]\\b/i, // spark
+        /\\blar\\b/i, // lar (truncated lark)
+        /\\b[ld]ar\\b/i, // dar, lar
+        /\\blar[^\\s]*\\b/i, // lar followed by anything
+        /\\b[\\w]*ark\\b/i, // anything ending with ark
+        /ark/i // just 'ark' anywhere
+      ];
+      
+      for (const pattern of phoneticallyClose) {
+        if (pattern.test(transcript)) {
+          foundWakeWord = true;
+          matchedPattern = transcript.match(pattern)?.[0] || 'lark-like';
+          this.debug('Phonetic match found:', matchedPattern, 'in', transcript);
+          break;
+}
+      }
+    }
+    
+    // Last resort - check if the transcript contains anything remotely like 'lark'
+    if (!foundWakeWord && transcript.length > 0) {
+      // Very loose pattern to catch severely misrecognized attempts
+      if (/l[a-z]*r[a-z]*|[a-z]*ark|[a-z]*ar[ck]/i.test(transcript)) {
+        const possibleMatch = transcript.match(/l[a-z]*r[a-z]*|[a-z]*ark|[a-z]*ar[ck]/i)?.[0];
+        this.debug('Loose match found:', possibleMatch, 'in', transcript);
+        
+        // Only accept if it's reasonably close
+        if (possibleMatch && possibleMatch.length < 8) {
+          foundWakeWord = true;
+          matchedPattern = possibleMatch;
+        }  }
+    
+    if (foundWakeWord) {
+      this.debug`Wake word detected! (confidence: ${confidence})`, transcript, 'Matched:', matchedPattern);
+      this.wakeWordDetected = true;
+      this.wakeWordState.next('detected');
+      
+      // Play audio confirmation
+      try {
+        const audio = new Audio('/sounds/activation.mp3');
+        audio.volume = 0.7;
+        audio.play().catch(e => this.debug('Failed to play activation sound', e));
+      } catch (e) {
+        this.debug('Error creating audio', e);
+      }
+      
+      // Emit wake word event with a message indicating the system is waiting for more input
+      this.emitEvent'wake_word_detected', { 
+        transcript, 
+        match: matchedPattern,
+        confidence,
+        message: 'Waiting for your full command...' 
+      });
+      
+      // Set up extended listening timeout
+      if (this.commandListeningTimeout) {
+        clearTimeout(this.commandListeningTimeout);
+      }
+      
+      this.commandListeningTimeout = setTimeout(() => {
+        this.debug('Extended listening period ended without command, resetting wake word detection');
+        this.wakeWordDetected = false;
+        this.wakeWordState.next('inactive');
+      }, this.extendedListeningTime);
+      
+      // Force restart recognition to ensure clean state for command detection
+      try {
+        if (this.recognition) {
+          // Schedule a restart to ensure we get a fresh recognition session
+          setTimeout(() => {
+            if (this.recognition) {
+              try {
+                this.recognition.stop();
+                setTimeout(() => {
+                  this.initializeRecognition();
+                  if (this.recognition) {
+                    this.recognition.start();
+                    this.debug('Recognition restarted after wake word detection');
+                  }        }             }rr) {
+                this.debug('Error restarting recognition after wake word:', err);
+              }         } 1000); // Wait 1 second to allow for command detection
+}
+      } catch (restartErr) {
+        this.debug('Failed to restart recognition after wake word:', restartErr);
+      }
+      
+      return true;
+    }
+    
+    return false;
+  }
+  
+  /**
+   * Handle recognition ending with enhanced recovery mechanisms
+   * This is critical for maintaining continuous voice recognition
+   */
+  private handleEnd = (): void => {
+    this.debug('Speech recognition ended');
+    
+    // Check if we need to restart the recognition
+    if (this.manualStop) {
+      this.debug('Recognition ended due to manual stop, not restarting');
+      this.isListening = false;
+      this.recognitionStatenext('inactive');
+      // Reset restart attempts on manual stop
+      this.restartAttempts = 0;
+      return;
+    }
+    
+    // If we should be listening but recognition ended, restart it
+    // This is the critical path for maintaining voice recognition reliability
+    this.debug('Auto-restarting recognition...');
+    
+    // Use exponential backoff for restarts to prevent browser throttling
+    const now = Date.now();
+    const timeSinceLastRestart = now - this.lastRestartTime;
+    
+    // Reset attempt counter if it's been a while since the last attempt
+    if (timeSinceLastRestart > 30000) { // 30 seconds
+      this.restartAttempts = 0;
+    }
+    
+    // Tactical Recovery System: Enhanced restart mechanism
+    this.restartAttempts++;
+    this.lastRestartTime = now;
+    
+    // Log restart attempt with enhanced diagnostics
+    this.debug`Recognition ended unexpectedly, attempting tactical recovery (attempt ${this.restartAttempts})`);
+    
+    // Track recovery attempt for analytics
+    this.trackRecognitionError'recovery_attempt', { 
+      attempt: this.restartAttempts,
+      lastRecognitionAccuracy: this.lastRecognitionAccuracy,
+      timeSinceLastSuccess: now - this.lastCommandTime
+    });
+    
+    // Tactical Recovery: Use smart backoff strategy based on environmental conditions
+    let backoffTime = 1000; // Default 1 second
+    
+    if (this.restartAttempts <= 2) {
+      // Quick recovery for first couple of attempts
+      backoffTime = 300;
+    } else if (this.restartAttempts <= 5) {
+      // Exponential backoff for next few attempts
+      backoffTime = Math.min(1000 * Math.pow(1.5, this.restartAttempts - 1), 5000);
+    } else {
+      // For persistent failures, try more aggressive recovery
+      // Reset the recognition instance completely
+      this.recognition = null;
+      backoffTime = 1000; // Longer delay for complete reset
+      
+      // Emit diagnostic event for persistent failures
+      this.emitEvent'error', { 
+        message: 'Persistent recognition failures, performing full reset',
+        attempts: this.restartAttempts
+      });
+    }
+    
+    this.debug`Scheduling restart in ${backoffTime}ms (attempt ${this.restartAttempts})`);
+    
+    // Clear any existing timeout
+    if (this.restartTimeout) {
+      clearTimeout(this.restartTimeout);
+    }
+    
+    // Schedule restart with backoff
+    this.restartTimeout = setTimeout(() => {
+        this.debug('Executing tactical recovery for speech recognition...');
+        
+        try {
+          // For persistent failures, try a more aggressive approach
+          if (this.restartAttempts > 5) {
+            // Complete reset: force garbage collection by nullifying and recreating
+            this.recognition = null;
+            
+            // Small delay to allow browser to clean up resources
+            setTimeout(() => {
+              this.initializeRecognition();
+              if (this.recognition) {
+                this.recognition.start();
+                this.isListening = true;
+                this.recognitionStatenext('listening');
+                this.debug('Full recognition reset and restart successful');
+              }      }            }      } 100);
+          }           // Standard restart for normal recovery
+            this.initializeRecognition();
+            if (this.recognition) {
+              this.recognition.start();
+              this.isListening = true;
+              this.recognitionStatenext('listening');
+              this.debug('Recognition restart successful');
+            }      }          }} catch (retryError) {
+          this.debug('Recovery attempt failed:', retryError);
+          
+          // Track the error for analytics
+          this.trackRecognitionError'recovery_failure', {
+            error: String(retryError),
+            attempt: this.restartAttempts,
+            browser: navigator.userAgent
+          }    
+          // If we keep failing, try a different approach next time
+          this.handleRecognitionStartErrorretryError);
+}
+      }, backoffTime);
+  }
+  }
+  
+  /**
+   * Handle recognition errors with enhanced recovery mechanisms
+   * This is critical for maintaining reliable voice recognition in challenging environments
+   */
+  private handleError = (event: SpeechRecognitionErrorEvent): void => {
+    const errorMessage = event.error || 'Unknown speech recognition error';
+    if (this.debug) {
+      this.debug('Recognition error:', errorMessage, event.message || '');
+    }
+    
+    // Track error for analytics with enhanced diagnostics
+    this.trackRecognitionError
+      this.trackRecognitionError'speech_api_error', {
+        errorType: errorMessage,
+        errorMessage: event.message || '',
+        timestamp: Date.now(),
+        recognitionState: this.recognitionState?.value,
+        browserInfo: navigator.userAgent
+      });
+    }
+    
+    // Tactical Error Recovery: Handle specific error types with specialized recovery strategies
+    // This system is designed to maintain voice recognition reliability in challenging
+    // law enforcement scenarios where voice command functionality is mission-critical
+    switch (errorMessage) {
+      case 'no-speech':
+        this.debug     this.debug('No speech detected - applying tactical recovery');
+        }
+        // For no-speech errors, quick restart is usually best
+        setTimeout(() => {
+          if (!this.manualStop && this.debug && this.restartRecognition) {
+            this.debug('Tactical recovery: Restarting after no-speech error');
+            this.restartRecognition();
+          });        break;
+        
+      case 'network':
+        this.debug     this.debug('Network error occurred - implementing resilience protocol');
+        }
+        // For network errors, use exponential backoff
+        const networkBackoff = Math.min(1000 * Math.pow(1.5, this.restartAttempts || 0), 8000);
+        setTimeout(() => {
+          if (!this.manualStop && this.debug && this.restartRecognition) {
+            this.debug`Tactical recovery: Restarting after network error (backoff: ${networkBackoff}ms)`);
+            this.restartRecognition();
+          }        }Backoff);
+        break;
+        
+      case 'aborted':
+        this.debug     this.debug('Recognition aborted - implementing quick recovery');
+        }
+        // For aborted errors, quick restart if not manually stopped
+        if (!this.manualStop) {
+          setTimeout(() => {
+            if (this.debug && this.restartRecognition) {
+              this.debug('Tactical recovery: Restarting after aborted error');
+              this.restartRecognition();
+            }  )}
+        break;
+        
+      case 'not-allowed':
+      case 'permission-denied':
+        this.debug     this.debug('Microphone access denied - critical permission error');
+}
+        if (this.micPermission) {
+          this.micPermission.next('denied');
+}
+        localStorage.setItem('lark_microphone_permission', 'denied');
+        
+        // Emit detailed error with instructions for resolution
+        this.emitEvent
+          this.emitEvent'error', { 
+            message: 'Microphone access denied. Please grant permission in your browser settings.',
+            critical: true,
+            resolution: 'Go to browser settings and enable microphone access for this site',
+            browserInfo: navigator.userAgent
+          }    
+          // Attempt to guide the user through permission resolution
+          this.emitEvent'state_change', { 
+            state: 'permission_required',
+            message: 'LARK requires microphone access to function properly'
+          };
+        }break;
+        
+      default:
+        // For other errors, emit generic error and attempt standard recovery
+        this.emitEvent
+          this.emitEvent'error', { error: errorMessage, message: event.message || 'Speech recognition error' });
+        }
+        // Attempt standard recovery for unknown errors
+        if (!this.manualStop && this.handleEnd) {
+          this.handleEnd();
+        }}
+  
+  /**
+   * Restart recognition with enhanced error handling
+   * This is a utility method used by various error recovery mechanisms
+   */
+  private restartRecognition = (): void => {
+    try {
+      // Clean up existing instance if needed
+      if (this.recognition) {
+        try {
+          this.recognition.abort();
+        }) {
+          // Ignore errors when stopping an already stopped instance
+        }    
+      // Re-initialize and start
+      this.initializeRecognition();
+      
+      if (this.recognition) {
+        this.recognition.start();
+        this.isListening = true;
+        this.recognitionStatenext('listening');
+        this.debug('Recognition restarted successfully');
+      } else {
+        this.debug('Failed to restart recognition - initialization failed');
+      }
+    } catch (error) {
+      this.debug('Error during recognition restart:', error);
+      
+      // If we encounter an error during restart, try again with a delay
+      setTimeout(() => {
+        this.debug('Attempting recovery restart after error');
+        this.initializeRecognition();
+        if (this.recognition) {
+          try {
+            this.recognition.start();
+            this.isListening = true;
+            this.recognitionStatenext('listening');
+          }catch (e) {
+            this.debug('Second restart attempt failed:', e);
+          }        }000);
+    }
+  }
+  
+  /**
+   * Handle recognition start error with enhanced diagnostics and recovery
+   */
+  private handleRecognitionStartError = (error: any): void => {
+    this.debug('Error starting speech recognition:', error);
+    
+    // Track detailed error information
+    this.trackRecognitionError'start_error', {
+      error: String(error),
+      message: error?.message || '',
+      stack: error?.stack || '',
+      browser: navigator.userAgent,
+      timestamp: Date.now()
+    });
+    
+    // Emit error event with more detailed information
+    this.emitEvent'error', { 
+      message: 'Failed to start speech recognition', 
+      error: String(error),
+      recoverable: true
+    });
+    
+    // Set error state
+    if (this.recognitionState) {
+      this.recognitionStatenext('error');
+    }
+    
+    // Check if this is a permission error
+    const errorMessage = error?.message || String(error);
+    if (errorMessage.includes('permission') || errorMessage.includes('not allowed')) {
+      this.micPermission.next('denied');
+      localStorage.setItem('lark_microphone_permission', 'denied');
+      
+      // Emit specific permission error event
+      this.emitEvent'error', {
+        type: 'permission_denied',
+        message: 'Microphone access denied. LARK requires microphone permission to function.',
+        critical: true
+      });
+      
+      return; // Don't attempt to restart for permission errors
+    }
+    
+    // For other errors, schedule restart with backoff
+    this.handleEnd();
+  }
+  
+  /**
+   * Handle audio start event
+   */
+  private handleAudioStart = (): void => {
+    this.debug('Audio input started');
+    this.emitEvent'debug', { message: 'Audio started' });
+  }
+  
+  /**
+   * Handle sound start event
+   */
+  private handleSoundStart = (): void => {
+    this.debug('Sound detected');
+    this.emitEvent'debug', { message: 'Sound detected' });
+  }
+  
+  /**
+   * Handle sound end event
+   */
+  private handleSoundEnd = (): void => {
+    this.debug('Sound ended');
+    this.emitEvent'debug', { message: 'Sound ended' });
+  }
+  
+  /**
+   * Handle no match event
+   */
+  private handleNoMatch = (): void => {
+    this.debug('No speech was recognized');
+    this.emitEvent'debug', { message: 'No match' });
+  }
+  
+  /**
+   * Emit an event to the events subject for subscribers
+   */
+  private emitEvent = (type: VoiceEvent['type'], payload: any): void => {
+    this.eventsSubject.next({ type, payload });
+  }
+  
+  /**
+   * Enhanced debug logging with persistence for troubleshooting
+   * Logs are categorized and stored in IndexedDB for later analysis
+   */
+  private debug = (message: string, ...args: any[]): void => {
+    console.log(`[VoiceRecognition] ${message}`, ...args);
+    
+    // Emit debug event with timestamp for better diagnostics
+    this.emitEvent'debug', { 
+      message, 
+      args,
+      timestamp: Date.now(),
+      component: 'VoiceRecognitionService'
+    });
+    
+    // Store important debug logs in IndexedDB for troubleshooting
+    try {
+      // Only store important logs to avoid flooding storage
+      const importantLogTypes = ['error', 'wake word', 'recognition', 'restart', 'permission'];
+      const logString = `${message} ${args.join(' ')}`.toLowerCase();
+      
+      // Check if this is an important log worth storing
+      const isImportantLog = importantLogTypes.some(type => logString.includes(type));
+      
+      if (isImportantLog && this.analyticsEnabled) {
+        indexedDBService.storeAnalyticsData({
+          id: `log_${Date.now()}`,
+          type: 'debug_log',
+          data: {
+            message: `${message} ${args.join(' ')}`,
+            timestamp: Date.now(),
+            recognitionState: this.recognitionState?.value,
+            wakeWordState: this.wakeWordState?.value
+          }
+          timestamp: Date.now()
+        }) => {
+          // Silently fail - debug logs are not critical
+        });
+    } catch (e) {
+      // Ignore errors in debug logging
+    }
+  }
+  
+  /**
+   * Get recognition state observable
+   */
+  public getRecognitionState(): Observable<RecognitionState> {
+    return this.recognitionStateasObservable();
+  }
+  
+  /**
+   * Get wake word state observable
+   */
+  public getWakeWordState(): Observable<WakeWordState> {
+    return this.wakeWordState.asObservable();
+  }
+  
+  /**
+   * Get microphone permission observable
+   */
+  public getMicPermission(): Observable<MicrophonePermission> {
+    return this.micPermission.asObservable();
+  }
+  
+  /**
+   * Get transcript observable
+   */
+  public getTranscript(): Observable<string> {
+    return this.transcript.asObservable();
+  }
+  
+  /**
+   * Get events observable
+   */
+  public getEvents(): Observable<VoiceEvent> {
+    return this.eventsSubject.asObservable();
+  }
+  
+  /**
+   * Store voice data for offline processing
+   */
+  private async storeVoiceData(transcript: string, alternatives: string[] = []): Promise<void> {
+    try {
+      await indexedDBService.cacheVoiceData({
+        id: uuidv4(),
+        transcript,
+        processed: navigator.onLine, // Mark as processed if online
+        timestamp: Date.now(),
+        alternatives
+      });
+      
+      this.debug('Voice data stored for offline processing');
+    } catch (error) {
+      this.debug('Error storing voice data:', error);
+    }
+  }
+  
+  /**
+   * Track voice recognition analytics
+   */
+  private async trackVoiceAnalytics(command: string, success: boolean, alternatives: string[] = []): Promise<void> {
+    try {
+      await indexedDBService.storeAnalyticsData({
+        id: uuidv4(),
+        type: 'voice_recognition',
+        data: {
+          command,
+          success,
+          alternatives,
+          timestamp: Date.now(),
+          accuracy: this.lastRecognitionAccuracy
+},
+        timestamp: Date.now()
+      });
+    } catch (error) {
+      this.debug('Error tracking voice analytics:', error);
+    }
+  }
+  
+  /**
+   * Update recognition accuracy metrics
+   */
+  private updateRecognitionAccuracy = (): void => {
+    if (this.recognitionAttempts > 0) {
+      this.lastRecognitionAccuracy = this.recognitionSuccesses / this.recognitionAttempts;
+      this.debug`Voice recognition accuracy: ${(this.lastRecognitionAccuracy * 100).toFixed(1)}%`);
+    }
+  }
+  
+  /**
+   * Get current voice recognition accuracy
+   */
+  public getRecognitionAccuracy(): number {
+    return this.lastRecognitionAccuracy;
+  }
+  
+  /**
+   * Check if the transcript is likely the system hearing its own response
+   */
+  private isSystemResponse = (transcript: string): boolean => {
+    // If the system is currently speaking, more likely to be self-hearing
+    if (this.isSystemSpeaking) {
+      return true;
+    }
+    
+    // Check against recent system responses
+    for (const response of this.recentResponses) {
+      // If the transcript contains a significant portion of a recent response
+      if (response.length > 5 && (transcript.includes(response) || response.includes(transcript))) {
+        return true;
+      }
+      
+      // Check for similarity using word overlap
+      const transcriptWords = transcript.split(/\s+/);
+      const responseWords = response.split(/\s+/);
+      
+      let matchingWords = 0;
+      for (const word of transcriptWords) {
+        if (word.length > 3 && responseWords.includes(word)) {
+          matchingWords++;
+}
+      }
+      
+      // If more than 40% of words match, likely a system response
+      if (transcriptWords.length > 2 && matchingWords / transcriptWords.length > 0.4) {
+        return true;
+      }
+    }
+    
+    // Common system response phrases
+    const systemPhrases = [
+      'command processed',
+      'processing',
+      'searching for',
+      'looking up',
+      'i found',
+      'here is',
+      'according to'
+    ];
+    
+    for (const phrase of systemPhrases) {
+      if (transcript.includes(phrase)) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+}
+
+// Create singleton instance
+export const voiceRecognitionService = new VoiceRecognitionService();
