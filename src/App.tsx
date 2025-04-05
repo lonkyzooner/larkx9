@@ -20,6 +20,7 @@ const FluidDesignDemo = lazy(() => import('./components/FluidDesignDemo').then(m
 const LiveKitRealtimeVoiceTest = lazy(() => import('./components/LiveKitRealtimeVoiceTest'));
 const AdvancedDashboard = lazy(() => import('./components/AdvancedDashboard').then(module => ({ default: module.AdvancedDashboard })));
 const ReportWriter = lazy(() => import('./components/ReportWriter').then(module => ({ default: module.ReportWriter })));
+// Import LiveKitVoiceProvider correctly as a named export
 import { LiveKitVoiceProvider } from './contexts/LiveKitVoiceContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import MirandaErrorBoundary from './components/MirandaErrorBoundary';
@@ -123,257 +124,255 @@ function App({ initialTab = 'voice' }: AppProps) {
         <div className="max-w-6xl mx-auto relative">
           {/* Enhanced background accents for visual interest */}
           {/* Modern header with sleek design */}
-        <header className="mb-8 relative fluid-card rounded-2xl p-4 border border-[rgba(255,255,255,0.5)] backdrop-blur-sm shadow-md" style={{ background: 'rgba(255, 255, 255, 0.85)', backdropFilter: 'blur(12px)' }}>
-          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-            <div className="flex items-center gap-4">
-              <LarkLogo width={45} height={45} className="mr-1" />
-              <div>
-                <h1 className="text-3xl md:text-4xl font-heading font-bold text-foreground tracking-tight leading-none flex items-center">
-                  <span className="fluid-heading">LARK</span>
-                  <span className="ml-2 text-xs font-medium fluid-badge px-2 py-1 rounded-full">1.0</span>
-                </h1>
-                <p className="text-muted-foreground text-sm font-light tracking-wide mt-1">
-                  Law Enforcement Assistance and Response Kit
-                </p>
+          <header className="mb-8 relative fluid-card rounded-2xl p-4 border border-[rgba(255,255,255,0.5)] backdrop-blur-sm shadow-md" style={{ background: 'rgba(255, 255, 255, 0.85)', backdropFilter: 'blur(12px)' }}>
+            <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+              <div className="flex items-center gap-4">
+                <LarkLogo width={45} height={45} className="mr-1" />
+                <div>
+                  <h1 className="text-3xl md:text-4xl font-heading font-bold text-foreground tracking-tight leading-none flex items-center">
+                    <span className="fluid-heading">LARK</span>
+                    <span className="ml-2 text-xs font-medium fluid-badge px-2 py-1 rounded-full">1.0</span>
+                  </h1>
+                  <p className="text-muted-foreground text-sm font-light tracking-wide mt-1">
+                    Law Enforcement Assistance and Response Kit
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex flex-wrap items-center gap-4 mt-2 md:mt-0 w-full md:w-auto">
+                {/* Location indicator */}
+                <div className="flex items-center px-4 py-2 rounded-full bg-card text-card-foreground border border-border/10 shadow-sm transition-all hover:bg-secondary/10 group">
+                  <MapPin className="w-4 h-4 text-black/70 group-hover:text-black" />
+                  <span className="text-foreground text-sm font-medium ml-2 group-hover:text-black">{location}</span>
+                </div>
+                
+                {/* Status indicators group */}
+                <div className="flex items-center gap-4 px-5 py-2 rounded-full bg-card text-card-foreground border border-border/10 shadow-sm backdrop-blur-sm">
+                  {/* Time */}
+                  <div className="flex items-center">
+                    <Clock className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-foreground text-sm font-medium ml-1.5 font-mono">{formatTime(currentTime)}</span>
+                  </div>
+                  
+                  <span className="w-[1px] h-4 bg-border"></span>
+                  
+                  {/* Battery */}
+                  <div className="flex items-center gap-1.5">
+                    <BatteryMedium 
+                      className={`w-4 h-4 ${batteryLevel < 20 ? 'text-destructive' : batteryLevel > 50 ? 'text-success' : 'text-warning'}`} 
+                    />
+                    <span className={`text-xs font-medium ml-0.5 ${batteryLevel < 20 ? 'text-destructive' : batteryLevel > 50 ? 'text-foreground' : 'text-warning'}`}>
+                      {batteryLevel}%
+                    </span>
+                  </div>
+                  
+                  {/* Connection status */}
+                  {connected ? (
+                    <div className="flex items-center gap-1">
+                      <WifiIcon className="w-4 h-4 text-success" />
+                      <span className="text-xs font-medium text-success">Online</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      <WifiIcon className="w-4 h-4 text-destructive" />
+                      <span className="text-xs font-medium text-destructive">Offline</span>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
+          </header>
+
+          {/* Main content */}
+          <main className="relative mb-8 space-y-6 z-10">
+            {/* Dashboard and Performance Monitor removed as requested */}
             
-            <div className="flex flex-wrap items-center gap-4 mt-2 md:mt-0 w-full md:w-auto">
-              {/* Location indicator */}
-              <div className="flex items-center px-4 py-2 rounded-full bg-card text-card-foreground border border-border/10 shadow-sm transition-all hover:bg-secondary/10 group">
-                <MapPin className="w-4 h-4 text-black/70 group-hover:text-black" />
-                <span className="text-foreground text-sm font-medium ml-2 group-hover:text-black">{location}</span>
-              </div>
-              
-              {/* Status indicators group */}
-              <div className="flex items-center gap-4 px-5 py-2 rounded-full bg-card text-card-foreground border border-border/10 shadow-sm backdrop-blur-sm">
-                {/* Time */}
-                <div className="flex items-center">
-                  <Clock className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-foreground text-sm font-medium ml-1.5 font-mono">{formatTime(currentTime)}</span>
-                </div>
-                
-                <span className="w-[1px] h-4 bg-border"></span>
-                
-                {/* Battery */}
-                <div className="flex items-center gap-1.5">
-                  <BatteryMedium 
-                    className={`w-4 h-4 ${batteryLevel < 20 ? 'text-destructive' : batteryLevel > 50 ? 'text-success' : 'text-warning'}`} 
-                  />
-                  <span className={`text-xs font-medium ml-0.5 ${batteryLevel < 20 ? 'text-destructive' : batteryLevel > 50 ? 'text-foreground' : 'text-warning'}`}>
-                    {batteryLevel}%
-                  </span>
-                </div>
-                
-                {/* Connection status */}
-                {connected ? (
-                  <div className="flex items-center gap-1">
-                    <WifiIcon className="w-4 h-4 text-success" />
-                    <span className="text-xs font-medium text-success">Online</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1">
-                    <WifiIcon className="w-4 h-4 text-destructive" />
-                    <span className="text-xs font-medium text-destructive">Offline</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </header>
-
-        {/* Main content */}
-        <main className="relative mb-8 space-y-6 z-10">
-          {/* Dashboard and Performance Monitor removed as requested */}
-
-          
-          <Tabs defaultValue="voice" value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="mb-8 fluid-glass rounded-2xl p-3 flex flex-wrap md:flex-nowrap justify-between border border-[rgba(255,255,255,0.4)] shadow-lg gap-2 backdrop-blur-sm sticky top-0 z-20 bg-white/20">
-              <TabsTrigger 
-                value="voice" 
-                className="flex-1 rounded-full py-3 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#003087] data-[state=active]:to-[#004db3] data-[state=active]:text-white text-muted-foreground font-medium transition-all duration-300 hover:text-foreground focus-ring hover:bg-white/70 data-[state=active]:shadow-md"
-                style={{ color: activeTab === 'voice' ? 'white' : 'inherit' }}
-              >
-                <div className="flex items-center justify-center gap-2 w-full">
-                  <div className="bg-white/20 rounded-full p-1.5 shadow-inner">
-                    <MicIcon className="h-4 w-4" />
-                  </div>
-                  <span className="text-sm font-medium">Assistant</span>
-                </div>
-              </TabsTrigger>
-              <TabsTrigger 
-                value="miranda" 
-                className="flex-1 rounded-full py-3 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#003087] data-[state=active]:to-[#004db3] data-[state=active]:text-white text-muted-foreground font-medium transition-all duration-300 hover:text-foreground focus-ring hover:bg-white/70 data-[state=active]:shadow-md"
-                style={{ color: activeTab === 'miranda' ? 'white' : 'inherit' }}
-              >
-                <div className="flex items-center justify-center gap-2 w-full">
-                  <div className="bg-white/20 rounded-full p-1.5 shadow-inner">
-                    <BookTextIcon className="h-4 w-4" />
-                  </div>
-                  <span className="text-sm font-medium">Miranda</span>
-                </div>
-              </TabsTrigger>
-              <TabsTrigger 
-                value="statutes" 
-                className="flex-1 rounded-full py-3 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#003087] data-[state=active]:to-[#004db3] data-[state=active]:text-white text-muted-foreground font-medium transition-all duration-300 hover:text-foreground focus-ring hover:bg-white/70 data-[state=active]:shadow-md"
-                style={{ color: activeTab === 'statutes' ? 'white' : 'inherit' }}
-              >
-                <div className="flex items-center justify-center gap-2 w-full">
-                  <div className="bg-white/20 rounded-full p-1.5 shadow-inner">
-                    <ShieldIcon className="h-4 w-4" />
-                  </div>
-                  <span className="text-sm font-medium">Statutes</span>
-                </div>
-              </TabsTrigger>
-              <TabsTrigger 
-                value="threats" 
-                className="flex-1 rounded-full py-3 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#003087] data-[state=active]:to-[#004db3] data-[state=active]:text-white text-muted-foreground font-medium transition-all duration-300 hover:text-foreground focus-ring hover:bg-white/70 data-[state=active]:shadow-md"
-                style={{ color: activeTab === 'threats' ? 'white' : 'inherit' }}
-              >
-                <div className="flex items-center justify-center gap-2 w-full">
-                  <div className="bg-white/20 rounded-full p-1.5 shadow-inner">
-                    <AlertTriangleIcon className="h-4 w-4" />
-                  </div>
-                  <span className="text-sm font-medium">Threats</span>
-                </div>
-              </TabsTrigger>
-              <TabsTrigger 
-                value="tools" 
-                className="flex-1 rounded-full py-3 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#003087] data-[state=active]:to-[#004db3] data-[state=active]:text-white text-muted-foreground font-medium transition-all duration-300 hover:text-foreground focus-ring hover:bg-white/70 data-[state=active]:shadow-md"
-                style={{ color: activeTab === 'tools' ? 'white' : 'inherit' }}
-              >
-                <div className="flex items-center justify-center gap-2 w-full">
-                  <div className="bg-white/20 rounded-full p-1.5 shadow-inner">
-                    <WrenchIcon className="h-4 w-4" />
-                  </div>
-                  <span className="text-sm font-medium">Tools</span>
-                </div>
-              </TabsTrigger>
-              <TabsTrigger 
-                value="reports" 
-                className="flex-1 rounded-full py-3 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#003087] data-[state=active]:to-[#004db3] data-[state=active]:text-white text-muted-foreground font-medium transition-all duration-300 hover:text-foreground focus-ring hover:bg-white/70 data-[state=active]:shadow-md"
-                style={{ color: activeTab === 'reports' ? 'white' : 'inherit' }}
-              >
-                <div className="flex items-center justify-center gap-2 w-full">
-                  <div className="bg-white/20 rounded-full p-1.5 shadow-inner">
-                    <FileTextIcon className="h-4 w-4" />
-                  </div>
-                  <span className="text-sm font-medium">Reports</span>
-                </div>
-              </TabsTrigger>
-              <TabsTrigger 
-                value="settings" 
-                className="flex-1 rounded-full py-3 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#003087] data-[state=active]:to-[#004db3] data-[state=active]:text-white text-muted-foreground font-medium transition-all duration-300 hover:text-foreground focus-ring hover:bg-white/70 data-[state=active]:shadow-md"
-                style={{ color: activeTab === 'settings' ? 'white' : 'inherit' }}
-              >
-                <div className="flex items-center justify-center gap-2 w-full">
-                  <div className="bg-white/20 rounded-full p-1.5 shadow-inner">
-                    <SettingsIcon className="h-4 w-4" />
-                  </div>
-                  <span className="text-sm font-medium">Settings</span>
-                </div>
-              </TabsTrigger>
-
-            </TabsList>
-
-            <div className="fluid-card rounded-xl overflow-hidden border border-[rgba(255,255,255,0.3)] shadow-md backdrop-blur-sm bg-opacity-90" style={{ background: 'rgba(255, 255, 255, 0.85)', backdropFilter: 'blur(12px)' }}>
-              <TabsContent value="voice" className="focus-visible:outline-none focus-visible:ring-0 m-0 animate-in fade-in-50 data-[state=inactive]:animate-out data-[state=inactive]:fade-out-0 data-[state=active]:duration-300">
-                <ErrorBoundary
-                  onError={(error, errorInfo) => {
-                    console.error('Voice Assistant Error:', error);
-                    console.error('Component Stack:', errorInfo.componentStack);
-                  }}
-                  fallback={
-                    <div className="p-6 text-center">
-                      <h2 className="text-xl font-semibold text-destructive mb-3">Voice Assistant Error</h2>
-                      <p className="mb-4 text-muted-foreground">The voice assistant encountered an error. Please try refreshing the page.</p>
-                      <Button 
-                        onClick={() => window.location.reload()}
-                        className="bg-primary text-white hover:bg-primary/90"
-                      >
-                        Reload Application
-                      </Button>
-                    </div>
-                  }
+            <Tabs defaultValue="voice" value={activeTab} onValueChange={setActiveTab} className="w-full">
+              <TabsList className="mb-8 fluid-glass rounded-2xl p-3 flex flex-wrap md:flex-nowrap justify-between border border-[rgba(255,255,255,0.4)] shadow-lg gap-2 backdrop-blur-sm sticky top-0 z-20 bg-white/20">
+                <TabsTrigger 
+                  value="voice" 
+                  className="flex-1 rounded-full py-3 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#003087] data-[state=active]:to-[#004db3] data-[state=active]:text-white text-muted-foreground font-medium transition-all duration-300 hover:text-foreground focus-ring hover:bg-white/70 data-[state=active]:shadow-md"
+                  style={{ color: activeTab === 'voice' ? 'white' : 'inherit' }}
                 >
-                  <MirandaErrorBoundary
-                    onMirandaError={(error) => {
-                      console.error('Miranda functionality error:', error);
-                      // Try to dispatch a fallback event to ensure Miranda rights can still be triggered
-                      try {
-                        document.dispatchEvent(new CustomEvent('mirandaErrorRecovery', { 
-                          detail: { timestamp: Date.now() } 
-                        }));
-                      } catch (e) {
-                        console.error('Failed to dispatch recovery event:', e);
-                      }
-                    }}
-                  >
-                    <Suspense fallback={<div className="p-8 text-center">Loading voice assistant...</div>}>
-                      <LarkChat />
-                    </Suspense>
-                  </MirandaErrorBoundary>
-                </ErrorBoundary>
-              </TabsContent>
-
-              <TabsContent value="miranda" className="focus-visible:outline-none focus-visible:ring-0 m-0 animate-in fade-in-50 data-[state=inactive]:animate-out data-[state=inactive]:fade-out-0 data-[state=active]:duration-300">
-                <Suspense fallback={<div className="p-8 text-center">Loading Miranda Rights...</div>}>
-                  <MirandaRights />
-                </Suspense>
-              </TabsContent>
-
-              <TabsContent value="statutes" className="focus-visible:outline-none focus-visible:ring-0 m-0 animate-in fade-in-50 data-[state=inactive]:animate-out data-[state=inactive]:fade-out-0 data-[state=active]:duration-300">
-                <Suspense fallback={<div className="p-8 text-center">Loading Statutes...</div>}>
-                  <RSCodes />
-                </Suspense>
-              </TabsContent>
-
-              <TabsContent value="threats" className="focus-visible:outline-none focus-visible:ring-0 m-0 animate-in fade-in-50 data-[state=inactive]:animate-out data-[state=inactive]:fade-out-0 data-[state=active]:duration-300">
-                <Suspense fallback={<div className="p-8 text-center">Loading Threat Detection...</div>}>
-                  <ThreatDetection />
-                </Suspense>
-              </TabsContent>
-              
-              <TabsContent value="tools" className="focus-visible:outline-none focus-visible:ring-0 m-0 animate-in fade-in-50 data-[state=inactive]:animate-out data-[state=inactive]:fade-out-0 data-[state=active]:duration-300">
-                <Suspense fallback={<div className="p-8 text-center">Loading Tools...</div>}>
-                  <Tools />
-                </Suspense>
-              </TabsContent>
-              
-              <TabsContent value="reports" className="focus-visible:outline-none focus-visible:ring-0 m-0 animate-in fade-in-50 data-[state=inactive]:animate-out data-[state=inactive]:fade-out-0 data-[state=active]:duration-300">
-                <Suspense fallback={<div className="p-8 text-center">Loading Report Writer...</div>}>
-                  <ReportWriter />
-                </Suspense>
-              </TabsContent>
-              
-              <TabsContent value="settings" className="focus-visible:outline-none focus-visible:ring-0 m-0 animate-in fade-in-50 data-[state=inactive]:animate-out data-[state=inactive]:fade-out-0 data-[state=active]:duration-300">
-                <div className="p-6">
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div className="space-y-6">
-                      <Suspense fallback={<div className="p-4 text-center">Loading Settings...</div>}>
-                        <Settings />
-                      </Suspense>
+                  <div className="flex items-center justify-center gap-2 w-full">
+                    <div className="bg-white/20 rounded-full p-1.5 shadow-inner">
+                      <MicIcon className="h-4 w-4" />
                     </div>
-                    <div className="space-y-6">
-                      <div className="fluid-card rounded-lg border border-[rgba(255,255,255,0.3)] shadow-sm overflow-hidden">
-                        <div className="p-4 border-b border-border/60 bg-muted/30">
-                          <h3 className="text-lg font-semibold flex items-center gap-2">
-                            <VolumeUpIcon className="h-5 w-5 text-primary" />
-                            Voice System Test
-                          </h3>
-                          <p className="text-sm text-muted-foreground mt-1">Test the LiveKit voice synthesis system</p>
-                        </div>
-                        <div className="p-4">
-                          <Suspense fallback={<div className="p-4 text-center">Loading LiveKit Test...</div>}>
-                            <LiveKitRealtimeVoiceTest />
-                          </Suspense>
+                    <span className="text-sm font-medium">Assistant</span>
+                  </div>
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="miranda" 
+                  className="flex-1 rounded-full py-3 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#003087] data-[state=active]:to-[#004db3] data-[state=active]:text-white text-muted-foreground font-medium transition-all duration-300 hover:text-foreground focus-ring hover:bg-white/70 data-[state=active]:shadow-md"
+                  style={{ color: activeTab === 'miranda' ? 'white' : 'inherit' }}
+                >
+                  <div className="flex items-center justify-center gap-2 w-full">
+                    <div className="bg-white/20 rounded-full p-1.5 shadow-inner">
+                      <BookTextIcon className="h-4 w-4" />
+                    </div>
+                    <span className="text-sm font-medium">Miranda</span>
+                  </div>
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="statutes" 
+                  className="flex-1 rounded-full py-3 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#003087] data-[state=active]:to-[#004db3] data-[state=active]:text-white text-muted-foreground font-medium transition-all duration-300 hover:text-foreground focus-ring hover:bg-white/70 data-[state=active]:shadow-md"
+                  style={{ color: activeTab === 'statutes' ? 'white' : 'inherit' }}
+                >
+                  <div className="flex items-center justify-center gap-2 w-full">
+                    <div className="bg-white/20 rounded-full p-1.5 shadow-inner">
+                      <ShieldIcon className="h-4 w-4" />
+                    </div>
+                    <span className="text-sm font-medium">Statutes</span>
+                  </div>
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="threats" 
+                  className="flex-1 rounded-full py-3 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#003087] data-[state=active]:to-[#004db3] data-[state=active]:text-white text-muted-foreground font-medium transition-all duration-300 hover:text-foreground focus-ring hover:bg-white/70 data-[state=active]:shadow-md"
+                  style={{ color: activeTab === 'threats' ? 'white' : 'inherit' }}
+                >
+                  <div className="flex items-center justify-center gap-2 w-full">
+                    <div className="bg-white/20 rounded-full p-1.5 shadow-inner">
+                      <AlertTriangleIcon className="h-4 w-4" />
+                    </div>
+                    <span className="text-sm font-medium">Threats</span>
+                  </div>
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="reports" 
+                  className="flex-1 rounded-full py-3 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#003087] data-[state=active]:to-[#004db3] data-[state=active]:text-white text-muted-foreground font-medium transition-all duration-300 hover:text-foreground focus-ring hover:bg-white/70 data-[state=active]:shadow-md"
+                  style={{ color: activeTab === 'reports' ? 'white' : 'inherit' }}
+                >
+                  <div className="flex items-center justify-center gap-2 w-full">
+                    <div className="bg-white/20 rounded-full p-1.5 shadow-inner">
+                      <FileTextIcon className="h-4 w-4" />
+                    </div>
+                    <span className="text-sm font-medium">Reports</span>
+                  </div>
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="tools" 
+                  className="flex-1 rounded-full py-3 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#003087] data-[state=active]:to-[#004db3] data-[state=active]:text-white text-muted-foreground font-medium transition-all duration-300 hover:text-foreground focus-ring hover:bg-white/70 data-[state=active]:shadow-md"
+                  style={{ color: activeTab === 'tools' ? 'white' : 'inherit' }}
+                >
+                  <div className="flex items-center justify-center gap-2 w-full">
+                    <div className="bg-white/20 rounded-full p-1.5 shadow-inner">
+                      <WrenchIcon className="h-4 w-4" />
+                    </div>
+                    <span className="text-sm font-medium">Tools</span>
+                  </div>
+                </TabsTrigger>
+                <TabsTrigger 
+                  value="settings" 
+                  className="flex-1 rounded-full py-3 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#003087] data-[state=active]:to-[#004db3] data-[state=active]:text-white text-muted-foreground font-medium transition-all duration-300 hover:text-foreground focus-ring hover:bg-white/70 data-[state=active]:shadow-md"
+                  style={{ color: activeTab === 'settings' ? 'white' : 'inherit' }}
+                >
+                  <div className="flex items-center justify-center gap-2 w-full">
+                    <div className="bg-white/20 rounded-full p-1.5 shadow-inner">
+                      <SettingsIcon className="h-4 w-4" />
+                    </div>
+                    <span className="text-sm font-medium">Settings</span>
+                  </div>
+                </TabsTrigger>
+              </TabsList>
+
+              <div className="fluid-card rounded-xl overflow-hidden border border-[rgba(255,255,255,0.3)] shadow-md backdrop-blur-sm bg-opacity-90" style={{ background: 'rgba(255, 255, 255, 0.85)', backdropFilter: 'blur(12px)' }}>
+                <TabsContent value="voice" className="focus-visible:outline-none focus-visible:ring-0 m-0 animate-in fade-in-50 data-[state=inactive]:animate-out data-[state=inactive]:fade-out-0 data-[state=active]:duration-300">
+                  <ErrorBoundary
+                    onError={(error, errorInfo) => {
+                      console.error('Voice Assistant Error:', error);
+                      console.error('Component Stack:', errorInfo.componentStack);
+                    }}
+                    fallback={
+                      <div className="p-6 text-center">
+                        <h2 className="text-xl font-semibold text-destructive mb-3">Voice Assistant Error</h2>
+                        <p className="mb-4 text-muted-foreground">The voice assistant encountered an error. Please try refreshing the page.</p>
+                        <Button 
+                          onClick={() => window.location.reload()}
+                          className="bg-primary text-white hover:bg-primary/90"
+                        >
+                          Reload Application
+                        </Button>
+                      </div>
+                    }
+                  >
+                    <MirandaErrorBoundary
+                      onMirandaError={(error) => {
+                        console.error('Miranda functionality error:', error);
+                        // Try to dispatch a fallback event to ensure Miranda rights can still be triggered
+                        try {
+                          document.dispatchEvent(new CustomEvent('mirandaErrorRecovery', { 
+                            detail: { timestamp: Date.now() } 
+                          }));
+                        } catch (e) {
+                          console.error('Failed to dispatch recovery event:', e);
+                        }
+                      }}
+                    >
+                      <Suspense fallback={<div className="p-8 text-center">Loading voice assistant...</div>}>
+                        <LarkChat />
+                      </Suspense>
+                    </MirandaErrorBoundary>
+                  </ErrorBoundary>
+                </TabsContent>
+
+                <TabsContent value="miranda" className="focus-visible:outline-none focus-visible:ring-0 m-0 animate-in fade-in-50 data-[state=inactive]:animate-out data-[state=inactive]:fade-out-0 data-[state=active]:duration-300">
+                  <Suspense fallback={<div className="p-8 text-center">Loading Miranda Rights...</div>}>
+                    <MirandaRights />
+                  </Suspense>
+                </TabsContent>
+
+                <TabsContent value="statutes" className="focus-visible:outline-none focus-visible:ring-0 m-0 animate-in fade-in-50 data-[state=inactive]:animate-out data-[state=inactive]:fade-out-0 data-[state=active]:duration-300">
+                  <Suspense fallback={<div className="p-8 text-center">Loading Statutes...</div>}>
+                    <RSCodes />
+                  </Suspense>
+                </TabsContent>
+
+                <TabsContent value="threats" className="focus-visible:outline-none focus-visible:ring-0 m-0 animate-in fade-in-50 data-[state=inactive]:animate-out data-[state=inactive]:fade-out-0 data-[state=active]:duration-300">
+                  <Suspense fallback={<div className="p-8 text-center">Loading Threat Detection...</div>}>
+                    <ThreatDetection />
+                  </Suspense>
+                </TabsContent>
+                
+                <TabsContent value="tools" className="focus-visible:outline-none focus-visible:ring-0 m-0 animate-in fade-in-50 data-[state=inactive]:animate-out data-[state=inactive]:fade-out-0 data-[state=active]:duration-300">
+                  <Suspense fallback={<div className="p-8 text-center">Loading Tools...</div>}>
+                    <Tools />
+                  </Suspense>
+                </TabsContent>
+                
+                <TabsContent value="reports" className="focus-visible:outline-none focus-visible:ring-0 m-0 animate-in fade-in-50 data-[state=inactive]:animate-out data-[state=inactive]:fade-out-0 data-[state=active]:duration-300">
+                  <Suspense fallback={<div className="p-8 text-center">Loading Report Writer...</div>}>
+                    <ReportWriter />
+                  </Suspense>
+                </TabsContent>
+                
+                <TabsContent value="settings" className="focus-visible:outline-none focus-visible:ring-0 m-0 animate-in fade-in-50 data-[state=inactive]:animate-out data-[state=inactive]:fade-out-0 data-[state=active]:duration-300">
+                  <div className="p-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <div className="space-y-6">
+                        <Suspense fallback={<div className="p-4 text-center">Loading Settings...</div>}>
+                          <Settings />
+                        </Suspense>
+                      </div>
+                      <div className="space-y-6">
+                        <div className="fluid-card rounded-lg border border-[rgba(255,255,255,0.3)] shadow-sm overflow-hidden">
+                          <div className="p-4 border-b border-border/60 bg-muted/30">
+                            <h3 className="text-lg font-semibold flex items-center gap-2">
+                              <VolumeUpIcon className="h-5 w-5 text-primary" />
+                              Voice System Test
+                            </h3>
+                            <p className="text-sm text-muted-foreground mt-1">Test the LiveKit voice synthesis system</p>
+                          </div>
+                          <div className="p-4">
+                            <Suspense fallback={<div className="p-4 text-center">Loading LiveKit Test...</div>}>
+                              <LiveKitRealtimeVoiceTest />
+                            </Suspense>
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              </TabsContent>
-            </div>
+                </TabsContent>
+              </div>
             </Tabs>
           </main>
 
@@ -389,7 +388,7 @@ function App({ initialTab = 'voice' }: AppProps) {
         </div>
       </div>
     </LiveKitVoiceProvider>
-    );
-  }
+  );
+}
 
 export default App;
