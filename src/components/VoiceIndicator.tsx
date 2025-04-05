@@ -83,7 +83,7 @@ export function VoiceIndicator() {
     // Subscribe to voice recognition events with optimized handler
     let subscription;
     try {
-      subscription = voiceRecognitionService.getEvents().subscribe(event => {
+      subscription = voiceRecognitionService.getEvents().subscribe((event: {type: string; payload: {transcript?: string; confidence?: number}}) => {
         if (event.type === 'interim_transcript' || event.type === 'command_detected') {
           const transcriptText = event.payload.transcript || '';
           const confidenceValue = event.payload.confidence || 0;

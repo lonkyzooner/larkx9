@@ -614,6 +614,11 @@ class LiveKitVoiceService {
       
       return;
     } catch (error) {
+      if (error instanceof Error && error.message.includes('OpenAI API')) {
+        console.log('[LiveKitVoice] OpenAI API error, attempting fallback synthesis');
+        this.speakWithBrowserFallback(text, voice);
+        return; // We've handled it with the fallback
+      }
       console.error('[LiveKitVoice] Error using OpenAI fallback:', error);
       // Fall back to browser speech synthesis as a last resort
       this.speakWithBrowserFallback(text, voice);
@@ -672,14 +677,10 @@ class LiveKitVoiceService {
         this.emitEvent('playback_complete', { timestamp: Date.now() });
       };
       
-      utterance.onerror = (event) => {
-        console.error('[LiveKitVoice] Browser speech synthesis error:', event);
+      utterance.onerror = (event: unknown) => {
+        console.error('[LiveKitVoice] Error during speech synthesis:', event instanceof Error ? event.message : 'Unknown error');
         this.synthesisState.next('error');
         this.isSpeaking.next(false);
-        this.emitEvent('error', { 
-          error: 'Browser speech synthesis error',
-          timestamp: Date.now()
-        });
         
         // Try audio beep fallback as last resort
         this.speakWithAudioBeepFallback(text);
@@ -687,8 +688,8 @@ class LiveKitVoiceService {
       
       // Speak the text
       window.speechSynthesis.speak(utterance);
-    } catch (error) {
-      console.error('[LiveKitVoice] Error using browser speech synthesis:', error);
+    } catch (error: unknown) {
+      console.error('[LiveKitVoice] Error using browser speech synthesis:', error instanceof Error ? error.message : 'Unknown error');
       this.synthesisState.next('error');
       this.isSpeaking.next(false);
       
@@ -1004,7 +1005,7 @@ class LiveKitVoiceService {
         // Publish the message to the room
         // This will be received by the LiveKit agent
         if (this.room && this.room.localParticipant) {
-          await this.room.localParticipant?.publishData(
+          await this.room.localParticipant.publishData(
             new TextEncoder().encode(JSON.stringify(message)),
             { reliable: true }
           );

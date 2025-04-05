@@ -436,15 +436,15 @@ export class VoiceRecognitionService {
     const transcript = event.results[0][0].transcript;
     
     // Check if wake word is detected
-    if (this.isWakeWordDetected(transcript)) {
-      this.handleWakeWordDetected();
+    if (this.checkWakeWord(transcript)) {
+      this.handleWakeWord();
       return;
     }
     
     // Check for Miranda command even during system speech
     if (transcript.includes('miranda')) {
       this.debug('Miranda command detected during system speech, prioritizing');
-      this.processCommand(transcript, true); // Process as high priority
+      this.handleCommand(transcript, true); // Process as high priority
       return;
     }
     
@@ -727,7 +727,66 @@ export class VoiceRecognitionService {
    * Force wake word detection (for testing/debugging)
    */
   public forceWakeWordDetection(): void {
-    this.handleWakeWordDetected();
+    this.handleWakeWord();
+  }
+
+  /**
+   * Check if the transcript contains a wake word
+   */
+  private checkWakeWord(transcript: string): boolean {
+    const lowerCaseTranscript = transcript.toLowerCase().trim();
+    return this.wakeWords.some(word => lowerCaseTranscript.includes(word));
+  }
+
+  /**
+   * Handle wake word detection
+   */
+  private handleWakeWord(): void {
+    this.debug('Wake word detected');
+    this.wakeWordDetected = true; // Set the boolean flag
+    this.emitEvent('wake_word_detected', { timestamp: Date.now() });
+    // Play wake sound
+    this.playWakeSound();
+  }
+
+  /**
+   * Handle detected command
+   */
+  private handleCommand(transcript: string, highPriority: boolean = false): void {
+    this.debug('Processing command: ' + transcript);
+    this.emitEvent('command_detected', { 
+      transcript, 
+      confidence: 0.9,
+      highPriority: highPriority,
+      timestamp: Date.now() 
+    });
+  }
+
+  /**
+   * Play wake sound to indicate wake word was detected
+   */
+  private playWakeSound(): void {
+    try {
+      if (this.audioContext) {
+        const oscillator = this.audioContext.createOscillator();
+        const gainNode = this.audioContext.createGain();
+        
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(880, this.audioContext.currentTime); // A5
+        oscillator.frequency.exponentialRampToValueAtTime(1760, this.audioContext.currentTime + 0.2); // A6
+        
+        gainNode.gain.setValueAtTime(0.1, this.audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.3);
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(this.audioContext.destination);
+        
+        oscillator.start();
+        oscillator.stop(this.audioContext.currentTime + 0.3);
+      }
+    } catch (error) {
+      console.error('Error playing wake sound:', error);
+    }
   }
 }
 
