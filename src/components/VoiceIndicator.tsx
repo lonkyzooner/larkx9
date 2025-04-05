@@ -44,27 +44,37 @@ export function VoiceIndicator() {
 
   useEffect(() => {
     // Subscribe to voice recognition events with optimized handler
-    const subscription = voiceRecognitionService.getEvents().subscribe(event => {
-      if (event.type === 'interim_transcript' || event.type === 'command_detected') {
-        const transcriptText = event.payload.transcript || '';
-        const confidenceValue = event.payload.confidence || 0;
-        
-        // Show indicator with the new text and confidence
-        showIndicator(transcriptText, confidenceValue);
-        
-        // Dispatch custom event for backward compatibility
-        // Use requestAnimationFrame for better performance
-        requestAnimationFrame(() => {
-          const customEvent = new CustomEvent('lark-interim-transcript', {
-            detail: {
-              transcript: transcriptText,
-              confidence: confidenceValue
-            }
+    let subscription;
+    try {
+      subscription = voiceRecognitionService.getEvents().subscribe(event => {
+        if (event.type === 'interim_transcript' || event.type === 'command_detected') {
+          const transcriptText = event.payload.transcript || '';
+          const confidenceValue = event.payload.confidence || 0;
+          
+          // Show indicator with the new text and confidence
+          showIndicator(transcriptText, confidenceValue);
+          
+          // Dispatch custom event for backward compatibility
+          // Use requestAnimationFrame for better performance
+          requestAnimationFrame(() => {
+            const customEvent = new CustomEvent('lark-interim-transcript', {
+              detail: {
+                transcript: transcriptText,
+                confidence: confidenceValue
+              }
+            });
+            window.dispatchEvent(customEvent);
           });
-          window.dispatchEvent(customEvent);
-        });
-      }
-    });
+        }
+      });
+    } catch (error) {
+      console.warn('Voice recognition service initialization failed:', error);
+      // Use a dummy subscription that can be safely unsubscribed
+      subscription = { unsubscribe: () => {} };
+      
+      // Show a message indicating development mode
+      showIndicator('Dev Mode: API Keys Not Set', 1);
+    }
     
     // Also keep the original event listeners for backward compatibility but with improved performance
     const handleAudioDetected = useCallback((event: CustomEvent) => {
@@ -89,7 +99,9 @@ export function VoiceIndicator() {
     
     // Clean up
     return () => {
-      subscription.unsubscribe();
+      if (subscription) {
+        subscription.unsubscribe();
+      }
       window.removeEventListener('lark-audio-detected', handleAudioDetected as EventListener);
       window.removeEventListener('lark-interim-transcript', handleInterimTranscript as EventListener);
     };

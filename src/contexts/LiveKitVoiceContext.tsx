@@ -175,23 +175,31 @@ export const LiveKitVoiceProvider: React.FC<{ children: React.ReactNode }> = ({ 
   // Speak text using LiveKit
   const speak = useCallback(async (text: string, voice?: string, targetLanguage?: string): Promise<void> => {
     try {
-      // Log the speech request for debugging
-      addDebugMessage(`Speaking text: ${text.substring(0, 50)}${text.length > 50 ? '...' : ''}`);
-      
-      // Connect to a room if not already connected - don't require microphone for TTS
+      // If we're not connected yet, try to connect first
       if (!isConnected) {
-        const connectResult = await connect(undefined, false);
+        const connectResult = await connect();
+        
         // If connection failed, we'll still try to speak using the fallback
         if (connectResult === false) {
           addDebugMessage('Connection failed, using fallback TTS');
         }
       }
       
+      // Log the speech request for debugging
+      addDebugMessage(`Speaking text: ${text.substring(0, 50)}${text.length > 50 ? '...' : ''}`);
+      
       // Speak the text - even if connection failed, the service will use fallback methods
       await liveKitVoiceService.speak(text, voice || 'ash', targetLanguage);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       addDebugMessage(`Error speaking text: ${errorMessage}`);
+      
+      // In development mode without API keys, just log the text that would have been spoken
+      if (errorMessage.includes('API key') || errorMessage.includes('Missing key')) {
+        console.log(`[DEV MODE] Would speak: "${text}" with voice: ${voice || 'ash'}`);
+        // Don't throw an error in dev mode
+        return;
+      }
       
       // Try fallback directly if LiveKit fails
       try {
@@ -214,34 +222,52 @@ export const LiveKitVoiceProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   // Subscribe to LiveKit service events
   useEffect(() => {
-    // Subscribe to speaking state
-    const speakingSubscription = liveKitVoiceService.getSpeakingState().subscribe(speaking => {
-      setIsSpeaking(speaking);
-    });
+    // Create empty subscriptions to handle errors gracefully
+    let speakingSubscription = { unsubscribe: () => {} };
+    let synthesisSubscription = { unsubscribe: () => {} };
+    let micPermissionSubscription = { unsubscribe: () => {} };
+    let eventsSubscription = { unsubscribe: () => {} };
+    let errorSubscription = { unsubscribe: () => {} };
     
-    // Subscribe to synthesis state
-    const synthesisSubscription = liveKitVoiceService.getSynthesisState().subscribe(state => {
-      setSynthesisState(state);
-    });
-    
-    // Subscribe to microphone permission state
-    const micPermissionSubscription = liveKitVoiceService.getMicPermission().subscribe(permission => {
-      setMicPermission(permission);
-      addDebugMessage(`Microphone permission: ${permission}`);
-    });
-    
-    // Subscribe to events
-    const eventsSubscription = liveKitVoiceService.getEvents().subscribe(event => {
-      addDebugMessage(`LiveKit event: ${event.type} - ${JSON.stringify(event.payload)}`);
-    });
-    
-    // Subscribe to errors
-    const errorSubscription = liveKitVoiceService.getErrorEvent().subscribe(error => {
-      if (error) {
-        setError(error);
-        addDebugMessage(`LiveKit error: ${error.message || 'Unknown error'}`);
-      }
-    });
+    try {
+      // Subscribe to speaking state
+      speakingSubscription = liveKitVoiceService.getSpeakingState().subscribe(speaking => {
+        setIsSpeaking(speaking);
+      });
+      
+      // Subscribe to synthesis state
+      synthesisSubscription = liveKitVoiceService.getSynthesisState().subscribe(state => {
+        setSynthesisState(state);
+      });
+      
+      // Subscribe to microphone permission state
+      micPermissionSubscription = liveKitVoiceService.getMicPermission().subscribe(permission => {
+        setMicPermission(permission);
+        addDebugMessage(`Microphone permission: ${permission}`);
+      });
+      
+      // Subscribe to events
+      eventsSubscription = liveKitVoiceService.getEvents().subscribe(event => {
+        addDebugMessage(`LiveKit event: ${event.type} - ${JSON.stringify(event.payload)}`);
+      });
+      
+      // Subscribe to errors
+      errorSubscription = liveKitVoiceService.getErrorEvent().subscribe(error => {
+        if (error) {
+          setError(error);
+          addDebugMessage(`LiveKit error: ${error.message || 'Unknown error'}`);
+        }
+      });
+    } catch (error) {
+      console.warn('LiveKit service initialization failed:', error);
+      addDebugMessage(`LiveKit initialization failed: ${error instanceof Error ? error.message : 'Missing API keys'}`); 
+      setError({
+        type: 'api_key_error',
+        message: 'API keys missing or invalid. Running in development mode with limited functionality.',
+        timestamp: Date.now(),
+        recoverable: false
+      });
+    }
     
     return () => {
       // Unsubscribe from all subscriptions
@@ -250,8 +276,12 @@ export const LiveKitVoiceProvider: React.FC<{ children: React.ReactNode }> = ({ 
       eventsSubscription.unsubscribe();
       errorSubscription.unsubscribe();
       
-      // Disconnect from LiveKit
-      liveKitVoiceService.disconnect();
+      try {
+        // Disconnect from LiveKit
+        liveKitVoiceService.disconnect();
+      } catch (error) {
+        console.warn('Error disconnecting from LiveKit:', error);
+      }
     };
   }, [addDebugMessage]);
 
