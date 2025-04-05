@@ -1004,7 +1004,7 @@ class LiveKitVoiceService {
         // Publish the message to the room
         // This will be received by the LiveKit agent
         if (this.room && this.room.localParticipant) {
-          await this.room.localParticipant.publishData(
+          await this.room.localParticipant?.publishData(
             new TextEncoder().encode(JSON.stringify(message)),
             { reliable: true }
           );
@@ -1033,7 +1033,7 @@ class LiveKitVoiceService {
       });
       
       this.emitEvent('error', { 
-        error: error instanceof Error ? error.message : String(error || 'Error synthesizing speech'),
+        error: error instanceof Error ? error.message : String(error ?? 'Error synthesizing speech'),
         timestamp: Date.now()
       });
       

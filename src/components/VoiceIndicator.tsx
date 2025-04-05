@@ -112,7 +112,7 @@ export function VoiceIndicator() {
     }
     
     // Also keep the original event listeners for backward compatibility but with improved performance
-    const handleAudioDetected = useCallback((event: CustomEvent) => {
+    const handleAudioDetected = useCallback((event: CustomEvent<{transcript: string; confidence: number}>) => {
       const transcriptText = event.detail.transcript || '';
       const confidenceValue = event.detail.confidence || 0;
       
@@ -120,7 +120,7 @@ export function VoiceIndicator() {
       showIndicator(transcriptText, confidenceValue);
     }, [showIndicator]);
 
-    const handleInterimTranscript = useCallback((event: CustomEvent) => {
+    const handleInterimTranscript = useCallback((event: CustomEvent<{transcript: string; confidence: number}>) => {
       const transcriptText = event.detail.transcript || '';
       const confidenceValue = event.detail.confidence || 0;
       
