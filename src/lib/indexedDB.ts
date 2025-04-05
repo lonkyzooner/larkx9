@@ -5,7 +5,7 @@
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
 import { Message } from '../types/chat';
 
-// Define database schema
+// Define the database schema
 interface LarkDB extends DBSchema {
   messages: {
     key: number;
@@ -31,6 +31,16 @@ interface LarkDB extends DBSchema {
     key: string;
     value: any;
   };
+  report_items: { // Use report_items instead of reports to avoid conflict
+    key: string;
+    value: {
+      id: string;
+      title: string;
+      content: string;
+      section: string;
+      tags: string[];
+    };
+  };
   statutes: {
     key: string;
     value: {
@@ -43,11 +53,23 @@ interface LarkDB extends DBSchema {
       'by-title': string;
     };
   };
+  bookmarks: {
+    key: string;
+    value: {
+      id: string;
+      title: string;
+      content: string;
+      section: string;
+      tags: string[];
+    };
+  };
+  // Remove string indexing that uses unavailable type
 }
 
-// Database version
-const DB_VERSION = 1;
-const DB_NAME = 'lark-database';
+// Use a different database name to avoid conflicts with indexeddb-service.ts
+// which uses 'lark_offline_db' with version 3
+const DB_VERSION = 4; // Use higher version number to avoid conflicts
+const DB_NAME = 'lark_app_database';
 
 // Database connection
 let dbPromise: Promise<IDBPDatabase<LarkDB>>;
@@ -112,7 +134,7 @@ export const messagesDB = {
   async saveMessage(message: Message): Promise<boolean> {
     try {
       const db = await getDB();
-      await db.put('messages', message);
+      await db.put('messages', message, message.timestamp);
       return true;
     } catch (error) {
       console.error('Error saving message:', error);
@@ -182,19 +204,14 @@ export const offlineQueueDB = {
   /**
    * Add a message to the offline queue
    */
-  async queueMessage(message: string): Promise<boolean> {
-    try {
-      const db = await getDB();
-      await db.add('offlineQueue', {
-        message,
-        timestamp: Date.now(),
-        processed: false
-      });
-      return true;
-    } catch (error) {
-      console.error('Error queuing message:', error);
-      return false;
-    }
+  async addToOfflineQueue(message: string): Promise<void> {
+    const db = await getDB();
+    await db.add('offlineQueue', {
+      id: Date.now(), // Add id field which is required
+      message,
+      timestamp: Date.now(),
+      processed: false
+    });
   },
   
   /**
@@ -394,3 +411,8 @@ export const statutesDB = {
     }
   }
 };
+
+export async function getReport(id: string): Promise<Report | null> {
+  const db = await getDB();
+  return await db.get('report_items', id) || null;
+}

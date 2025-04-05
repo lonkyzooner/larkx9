@@ -28,7 +28,9 @@
     "VITE_LIVEKIT_API_KEY": "APIriVQTTMAvLQ4",
     "VITE_LIVEKIT_API_SECRET": "fleSOaoOdQ0v5fOatkISxYqvNygclQAeSilRMZ1kLbwB",
     "VITE_APP_VERSION": "1.0.1",
-    "NODE_ENV": "production"
+    "NODE_ENV": "production",
+    "VITE_DEPLOY_ENV": "production",
+    "VITE_IS_VERCEL": "true"
   },
   "builds": [
     {

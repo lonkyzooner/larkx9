@@ -3,7 +3,9 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 let voiceRecognitionService: any;
 
 // Development mock
-const isDev = process.env.NODE_ENV === 'development';
+// On Vercel deployment, treat as production
+const isVercel = typeof window !== 'undefined' && window.location.hostname.includes('vercel.app');
+const isDev = process.env.NODE_ENV === 'development' && !isVercel;
 
 // Try to import the service, but provide a mock if it fails or we're in dev mode
 try {
@@ -140,7 +142,7 @@ export function VoiceIndicator() {
       window.removeEventListener('lark-audio-detected', handleAudioDetected as EventListener);
       window.removeEventListener('lark-interim-transcript', handleInterimTranscript as EventListener);
     };
-  }, []);
+  }, [showIndicator]); // Add showIndicator to dependency array
 
   // Only render when active
   if (!isActive) return null;

@@ -3,7 +3,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { SynthesisState } from '../services/voice/OpenAIVoiceService';
 
 // Define a flag for development mode
-const isDev = process.env.NODE_ENV === 'development';
+// If we're on Vercel deployment, treat as production
+const isVercel = typeof window !== 'undefined' && window.location.hostname.includes('vercel.app');
+const isDev = process.env.NODE_ENV === 'development' && !isVercel;
 
 // Import services conditionally to handle missing API keys
 let liveKitVoiceService: any;

@@ -3,6 +3,12 @@ import { indexedDBService } from '../../lib/indexeddb-service';
 import { v4 as uuidv4 } from 'uuid';
 import { whisperService } from '../whisper/WhisperService';
 
+// Improve environment detection for Vercel deployment
+const isVercel = typeof window !== 'undefined' && 
+  (window.location.hostname.includes('vercel.app') || 
+   import.meta.env.VITE_IS_VERCEL === 'true');
+const isDev = process.env.NODE_ENV === 'development' && !isVercel;
+
 // Define the SpeechRecognition type for better TypeScript support
 declare global {
   interface Window {
@@ -99,7 +105,7 @@ export class VoiceRecognitionService {
   private recognitionAttempts: number = 0;
   private recognitionSuccesses: number = 0;
   private lastRecognitionAccuracy: number = 0;
-  private debugMode: boolean = true; // Set to true for development
+  private debugMode: boolean = isDev; // Only enable debug mode in development, not on Vercel
   private commandProcessingDelay: number = 150; // Further reduced from 200ms to 150ms for faster response
   private extendedListeningTime: number = 2500; // Further reduced from 3000ms to 2500ms for faster response
   private wakeWords: string[] = ['lark', 'hey lark', 'ok lark', 'hey assistant']; // Wake words to listen for
