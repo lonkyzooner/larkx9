@@ -106,17 +106,10 @@ const MAX_DEBUG_MESSAGES = 50;
 
 // Provider component
 export const LiveKitVoiceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // If we're in development mode, show a warning badge
-  if (isDev) {
-    return (
-      <>
-        {/* Development mode notice */}
-        <div className="fixed top-0 left-0 right-0 bg-yellow-500 text-black z-50 p-2 text-center">
-          <strong>Development Mode:</strong> Running without API keys. Voice features are disabled.
-        </div>
-        {children}
-      </>
-    );
+  // Always render children normally without development warnings
+  if (false && isDev) {
+    // Development banner disabled
+    return <>{children}</>;
   }
   // State
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);

@@ -24,20 +24,10 @@ try {
 }
 
 export function VoiceIndicator() {
-  // If we're in development mode, return a simple placeholder
-  if (isDev) {
-    return (
-      <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-50 
-                    bg-yellow-500 text-black px-4 py-2 rounded-full 
-                    shadow-lg flex items-center gap-2">
-        <div className="relative">
-          <div className="h-3 w-3 bg-black rounded-full"></div>
-        </div>
-        <div className="text-sm font-medium">
-          Dev Mode: Voice features disabled
-        </div>
-      </div>
-    );
+  // Development mode indication disabled
+  if (false && isDev) {
+    // This code is disabled to remove development banners
+    return null;
   }
   const [isActive, setIsActive] = useState(false);
   const [transcript, setTranscript] = useState('');
