@@ -1,8 +1,58 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { liveKitVoiceService, MicrophonePermission } from '../services/livekit/LiveKitVoiceService';
-import { generateUserToken } from '../services/livekit/tokenService';
 import { v4 as uuidv4 } from 'uuid';
 import { SynthesisState } from '../services/voice/OpenAIVoiceService';
+
+// Define a flag for development mode
+const isDev = process.env.NODE_ENV === 'development';
+
+// Import services conditionally to handle missing API keys
+let liveKitVoiceService: any;
+let generateUserToken: any;
+let MicrophonePermission: any;
+
+// Try to import the services, but provide mocks if they fail
+try {
+  if (!isDev) {
+    const liveKitImport = require('../services/livekit/LiveKitVoiceService');
+    liveKitVoiceService = liveKitImport.liveKitVoiceService;
+    MicrophonePermission = liveKitImport.MicrophonePermission;
+    generateUserToken = require('../services/livekit/tokenService').generateUserToken;
+  } else {
+    // Use mocks in development mode
+    throw new Error('Dev mode - using mock services');
+  }
+} catch (error) {
+  console.log('Using mock LiveKit services for development');
+  
+  // Mock MicrophonePermission type
+  MicrophonePermission = {
+    unknown: 'unknown',
+    granted: 'granted',
+    denied: 'denied',
+    prompt: 'prompt'
+  };
+  
+  // Mock generateUserToken function
+  generateUserToken = () => 'mock-token-for-development';
+  
+  // Mock liveKitVoiceService
+  liveKitVoiceService = {
+    // Basic observables
+    getSpeakingState: () => ({ subscribe: (cb: any) => ({ unsubscribe: () => {} }) }),
+    getSynthesisState: () => ({ subscribe: (cb: any) => ({ unsubscribe: () => {} }) }),
+    getMicPermission: () => ({ subscribe: (cb: any) => ({ unsubscribe: () => {} }) }),
+    getEvents: () => ({ subscribe: (cb: any) => ({ unsubscribe: () => {} }) }),
+    getErrorEvent: () => ({ subscribe: (cb: any) => ({ unsubscribe: () => {} }) }),
+    
+    // Methods
+    requestMicrophonePermission: async () => false,
+    connect: async () => false,
+    disconnect: () => {},
+    speak: async () => {},
+    speakWithOpenAIFallback: async () => {},
+    stop: () => {}
+  };
+}
 
 // Define the context interface
 interface LiveKitVoiceContextType {
@@ -15,7 +65,7 @@ interface LiveKitVoiceContextType {
   roomName: string;
   
   // Microphone permission
-  micPermission: MicrophonePermission;
+  micPermission: typeof MicrophonePermission;
   requestMicrophonePermission: () => Promise<boolean>;
   
   // Actions
@@ -28,6 +78,7 @@ interface LiveKitVoiceContextType {
   // Debug info
   debugInfo: string[];
   error: any | null;
+  lastError: any | null;
 }
 
 // Create the context with default values
@@ -44,7 +95,8 @@ const LiveKitVoiceContext = createContext<LiveKitVoiceContextType>({
   speakWithOpenAIFallback: async () => {},
   stopSpeaking: () => {},
   debugInfo: [],
-  error: null
+  error: null,
+  lastError: null
 });
 
 // Maximum number of debug messages to keep
@@ -52,6 +104,18 @@ const MAX_DEBUG_MESSAGES = 50;
 
 // Provider component
 export const LiveKitVoiceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // If we're in development mode, show a warning badge
+  if (isDev) {
+    return (
+      <>
+        {/* Development mode notice */}
+        <div className="fixed top-0 left-0 right-0 bg-yellow-500 text-black z-50 p-2 text-center">
+          <strong>Development Mode:</strong> Running without API keys. Voice features are disabled.
+        </div>
+        {children}
+      </>
+    );
+  }
   // State
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
   const [synthesisState, setSynthesisState] = useState<SynthesisState>('idle');
@@ -59,8 +123,9 @@ export const LiveKitVoiceProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [roomName, setRoomName] = useState<string>('');
   const [debugInfo, setDebugInfo] = useState<string[]>([]);
   const [userId] = useState<string>(uuidv4());
-  const [micPermission, setMicPermission] = useState<MicrophonePermission>('unknown');
+  const [micPermission, setMicPermission] = useState<typeof MicrophonePermission>('unknown');
   const [error, setError] = useState<any | null>(null);
+  const [lastError, setLastError] = useState<any | null>(null);
 
   // Add debug message
   const addDebugMessage = useCallback((message: string) => {
@@ -231,30 +296,31 @@ export const LiveKitVoiceProvider: React.FC<{ children: React.ReactNode }> = ({ 
     
     try {
       // Subscribe to speaking state
-      speakingSubscription = liveKitVoiceService.getSpeakingState().subscribe(speaking => {
+      speakingSubscription = liveKitVoiceService.getSpeakingState().subscribe((speaking: boolean) => {
         setIsSpeaking(speaking);
       });
       
       // Subscribe to synthesis state
-      synthesisSubscription = liveKitVoiceService.getSynthesisState().subscribe(state => {
+      synthesisSubscription = liveKitVoiceService.getSynthesisState().subscribe((state: SynthesisState) => {
         setSynthesisState(state);
       });
       
       // Subscribe to microphone permission state
-      micPermissionSubscription = liveKitVoiceService.getMicPermission().subscribe(permission => {
+      micPermissionSubscription = liveKitVoiceService.getMicPermission().subscribe((permission: typeof MicrophonePermission) => {
         setMicPermission(permission);
         addDebugMessage(`Microphone permission: ${permission}`);
       });
       
       // Subscribe to events
-      eventsSubscription = liveKitVoiceService.getEvents().subscribe(event => {
+      eventsSubscription = liveKitVoiceService.getEvents().subscribe((event: any) => {
         addDebugMessage(`LiveKit event: ${event.type} - ${JSON.stringify(event.payload)}`);
       });
       
       // Subscribe to errors
-      errorSubscription = liveKitVoiceService.getErrorEvent().subscribe(error => {
+      errorSubscription = liveKitVoiceService.getErrorEvent().subscribe((error: any) => {
         if (error) {
           setError(error);
+          setLastError(error);
           addDebugMessage(`LiveKit error: ${error.message || 'Unknown error'}`);
         }
       });
@@ -311,7 +377,8 @@ export const LiveKitVoiceProvider: React.FC<{ children: React.ReactNode }> = ({ 
     speakWithOpenAIFallback,
     stopSpeaking,
     debugInfo,
-    error
+    error,
+    lastError
   };
 
   return (

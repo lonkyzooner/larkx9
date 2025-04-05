@@ -20,7 +20,7 @@ const FluidDesignDemo = lazy(() => import('./components/FluidDesignDemo').then(m
 const LiveKitRealtimeVoiceTest = lazy(() => import('./components/LiveKitRealtimeVoiceTest'));
 const AdvancedDashboard = lazy(() => import('./components/AdvancedDashboard').then(module => ({ default: module.AdvancedDashboard })));
 const ReportWriter = lazy(() => import('./components/ReportWriter').then(module => ({ default: module.ReportWriter })));
-// Import LiveKitVoiceProvider correctly as a named export
+// Import LiveKitVoiceProvider correctly
 import { LiveKitVoiceProvider } from './contexts/LiveKitVoiceContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import MirandaErrorBoundary from './components/MirandaErrorBoundary';
@@ -113,15 +113,40 @@ function App({ initialTab = 'voice' }: AppProps) {
     });
   };
 
-  return (
+  // Check if we're in development mode without API keys
+  const isDevelopmentMode = process.env.NODE_ENV === 'development';
+  
+  // Regular app with LiveKitVoiceProvider
+  const AppWithProvider = () => (
     <LiveKitVoiceProvider>
       <div className="min-h-screen fluid-background text-foreground p-4 md:p-6 overflow-hidden antialiased selection:bg-primary/20 selection:text-primary relative" style={{ background: 'linear-gradient(135deg, #e9f2f9 0%, #d1e6f9 100%)' }}>
-        {/* Decorative wave elements for fluid design */}
-        <div className="fluid-wave"></div>
-        <div className="fluid-wave-gold"></div>
-        {/* Voice detection indicator - shows when voice is detected */}
-        <VoiceIndicator />
-        <div className="max-w-6xl mx-auto relative">
+        {/* App content */}
+        {renderAppContent()}
+      </div>
+    </LiveKitVoiceProvider>
+  );
+  
+  // Fallback app without the provider for development
+  const AppWithoutProvider = () => (
+    <div className="min-h-screen fluid-background text-foreground p-4 md:p-6 overflow-hidden antialiased selection:bg-primary/20 selection:text-primary relative" style={{ background: 'linear-gradient(135deg, #e9f2f9 0%, #d1e6f9 100%)' }}>
+      {/* Development mode notice */}
+      <div className="fixed top-0 left-0 right-0 bg-yellow-500 text-black z-50 p-2 text-center">
+        <strong>Development Mode:</strong> Running without API keys. Voice features are disabled.
+      </div>
+      {/* App content */}
+      {renderAppContent()}
+    </div>
+  );
+  
+  // Helper function to render the app content
+  const renderAppContent = () => (
+    <>
+      {/* Decorative wave elements for fluid design */}
+      <div className="fluid-wave"></div>
+      <div className="fluid-wave-gold"></div>
+      {/* Voice detection indicator - shows when voice is detected */}
+      <VoiceIndicator />
+      <div className="max-w-6xl mx-auto relative">
           {/* Enhanced background accents for visual interest */}
           {/* Modern header with sleek design */}
           <header className="mb-8 relative fluid-card rounded-2xl p-4 border border-[rgba(255,255,255,0.5)] backdrop-blur-sm shadow-md" style={{ background: 'rgba(255, 255, 255, 0.85)', backdropFilter: 'blur(12px)' }}>
@@ -385,10 +410,17 @@ function App({ initialTab = 'voice' }: AppProps) {
               <span>All Rights Reserved</span>
             </p>
           </footer>
-        </div>
       </div>
-    </LiveKitVoiceProvider>
+    </>
   );
+  
+  // Try to use the provider first, but fall back to the version without it if there's an error
+  try {
+    return <AppWithProvider />;
+  } catch (error) {
+    console.warn('Error initializing LiveKitVoiceProvider:', error);
+    return <AppWithoutProvider />;
+  }
 }
 
 export default App;

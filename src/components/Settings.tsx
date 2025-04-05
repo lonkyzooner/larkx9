@@ -23,6 +23,7 @@ import {
 } from './ui/tabs';
 import { Separator } from './ui/separator';
 import { useVoice } from '../contexts/VoiceContext';
+import { commandProcessingService } from '../services/voice/CommandProcessingService';
 
 export function Settings() {
   // Add Account button functionality
@@ -35,14 +36,6 @@ export function Settings() {
   const [localName, setLocalName] = useState(settings.officerName);
   const [localRank, setLocalRank] = useState(settings.officerRank || 'Officer');
   const [localCodename, setLocalCodename] = useState(settings.officerCodename || '');
-
-  // Test voice settings with current configuration
-  const testVoiceSettings = async () => {
-    const greeting = settings.officerName 
-      ? `Hello ${settings.officerName}, this is how I will sound with the current settings.`
-      : 'This is how I will sound with the current settings.';
-    await speak(greeting);
-  };
 
   // Save officer profile when input is complete
   const handleProfileSave = () => {
@@ -85,6 +78,14 @@ export function Settings() {
     setLocalRank(trimmedRank);
     setLocalCodename(trimmedCodename);
     
+    // Update CommandProcessingService with the new profile
+    commandProcessingService.updateOfficerProfile({
+      name: trimmedName,
+      rank: trimmedRank,
+      codename: trimmedCodename,
+      displayName: displayName || trimmedRank // Use the determined displayName
+    });
+
     // Notify other components about the profile update
     document.dispatchEvent(new CustomEvent('officerProfileUpdated', { 
       detail: { 
@@ -291,12 +292,6 @@ export function Settings() {
                   LiveKit provides higher quality voices but requires microphone access. Browser synthesis works without permissions.
                 </p>
               </div>
-
-              <Button onClick={testVoiceSettings} className="mb-6">
-                Test Voice Settings
-              </Button>
-              
-              {/* LiveKit Voice Test section has been removed as requested */}
             </CardContent>
           </Card>
         </TabsContent>

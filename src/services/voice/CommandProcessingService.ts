@@ -133,6 +133,14 @@ class CommandProcessingService {
   private maxSyncRetries = 3;
   private syncRetryDelay = 5000; // 5 seconds
 
+  // Officer profile data
+  private officerProfile = {
+    name: '',
+    rank: '',
+    codename: '',
+    displayName: ''
+  };
+
   // Command queue for handling multiple commands
   private commandQueue: {command: string, alternatives: string[], timestamp: number, retryCount?: number, priority?: number, context?: CommandContext}[] = [];
   private processingQueue = false;
@@ -337,14 +345,12 @@ class CommandProcessingService {
       };
     }
     
+    // Identify command type early
+    const commandType = this.identifyCommandType(command);
+    
     // For text input from the chat interface, we want to process immediately
     // regardless of processing state to ensure responsiveness
     console.log(`[CommandProcessor] Processing command: "${command}"`);
-    
-    const commandType = this.identifyCommandType(command);
-    if (commandType === 'translation') {
-      return this.processTranslationCommand(command);
-    }
     
     // Set processing state
     const wasProcessing = this.processing.value;
@@ -705,13 +711,13 @@ class CommandProcessingService {
 
   private async processStandardCommand(command: string, alternatives: string[] = []): Promise<CommandResult> {
     try {
-      // Get settings for personalization
-      const settings = useSettings.getState().settings;
-      const officerName = settings.officerName || 'Officer';
+      // Get the preferred display name from the stored profile
+      const officerDisplayName = this.officerProfile.displayName || 'Officer';
       
       console.log('[CommandProcessor] Sending command to OpenAI service:', command);
       
       // Process the command using OpenAI service
+      // TODO: Pass officerDisplayName to processVoiceCommand for better personalization context
       const result = await processVoiceCommand(command);
       console.log('[CommandProcessor] OpenAI service result:', result);
       
@@ -767,12 +773,12 @@ class CommandProcessingService {
           });
         }
         
-        // Add officer name to the response for personalization if appropriate
-        if (success && response && !response.includes(officerName) && Math.random() > 0.5) {
+        // Add officer display name to the response for personalization if appropriate
+        if (success && response && !response.includes(officerDisplayName) && Math.random() > 0.5) {
           const personalizedPrefixes = [
-            `${officerName}, `,
-            `Got it ${officerName}. `,
-            `Yes ${officerName}, `
+            `${officerDisplayName}, `,
+            `Got it ${officerDisplayName}. `,
+            `Yes ${officerDisplayName}, `
           ];
           const randomPrefix = personalizedPrefixes[Math.floor(Math.random() * personalizedPrefixes.length)];
           response = randomPrefix + response;
@@ -1430,6 +1436,25 @@ class CommandProcessingService {
     });
     
     return errorResult;
+  }
+
+  /**
+   * Update the officer's profile information used for personalization.
+   * @param profile The officer profile data.
+   */
+  public updateOfficerProfile(profile: { name?: string; rank?: string; codename?: string; displayName?: string }): void {
+    this.officerProfile.name = profile.name || this.officerProfile.name;
+    this.officerProfile.rank = profile.rank || this.officerProfile.rank;
+    this.officerProfile.codename = profile.codename || this.officerProfile.codename;
+    // Determine display name logic (codename > rank+name > rank)
+    if (profile.codename) {
+      this.officerProfile.displayName = profile.codename;
+    } else if (profile.name) {
+      this.officerProfile.displayName = `${profile.rank || 'Officer'} ${profile.name}`;
+    } else {
+      this.officerProfile.displayName = profile.rank || 'Officer';
+    }
+    this.debug('Officer profile updated in CommandProcessingService', this.officerProfile);
   }
 }
 
