@@ -69,6 +69,23 @@ export function VoiceIndicator() {
     }, 2000);
   }, [clearActiveTimeout]);
 
+  // Define event handlers outside of useEffect to follow React hooks rules
+  const handleAudioDetected = useCallback((event: CustomEvent<{transcript: string; confidence: number}>) => {
+    const transcriptText = event.detail.transcript || '';
+    const confidenceValue = event.detail.confidence || 0;
+    
+    // Use the same show indicator function for consistency
+    showIndicator(transcriptText, confidenceValue);
+  }, [showIndicator]);
+
+  const handleInterimTranscript = useCallback((event: CustomEvent<{transcript: string; confidence: number}>) => {
+    const transcriptText = event.detail.transcript || '';
+    const confidenceValue = event.detail.confidence || 0;
+    
+    // Use the same show indicator function for consistency
+    showIndicator(transcriptText, confidenceValue);
+  }, [showIndicator]);
+
   useEffect(() => {
     // Subscribe to voice recognition events with optimized handler
     let subscription;
@@ -103,23 +120,6 @@ export function VoiceIndicator() {
       showIndicator('Dev Mode: API Keys Not Set', 1);
     }
     
-    // Also keep the original event listeners for backward compatibility but with improved performance
-    const handleAudioDetected = useCallback((event: CustomEvent<{transcript: string; confidence: number}>) => {
-      const transcriptText = event.detail.transcript || '';
-      const confidenceValue = event.detail.confidence || 0;
-      
-      // Use the same show indicator function for consistency
-      showIndicator(transcriptText, confidenceValue);
-    }, [showIndicator]);
-
-    const handleInterimTranscript = useCallback((event: CustomEvent<{transcript: string; confidence: number}>) => {
-      const transcriptText = event.detail.transcript || '';
-      const confidenceValue = event.detail.confidence || 0;
-      
-      // Use the same show indicator function for consistency
-      showIndicator(transcriptText, confidenceValue);
-    }, [showIndicator]);
-
     // Add event listeners
     window.addEventListener('lark-audio-detected', handleAudioDetected as EventListener);
     window.addEventListener('lark-interim-transcript', handleInterimTranscript as EventListener);
@@ -132,7 +132,7 @@ export function VoiceIndicator() {
       window.removeEventListener('lark-audio-detected', handleAudioDetected as EventListener);
       window.removeEventListener('lark-interim-transcript', handleInterimTranscript as EventListener);
     };
-  }, [showIndicator]); // Add showIndicator to dependency array
+  }, [showIndicator, handleAudioDetected, handleInterimTranscript]); // Add all dependencies
 
   // Only render when active
   if (!isActive) return null;
