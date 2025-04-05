@@ -19,6 +19,7 @@ const Settings = lazy(() => import('./components/Settings').then(module => ({ de
 const FluidDesignDemo = lazy(() => import('./components/FluidDesignDemo').then(module => ({ default: module.FluidDesignDemo })));
 const LiveKitRealtimeVoiceTest = lazy(() => import('./components/LiveKitRealtimeVoiceTest'));
 const AdvancedDashboard = lazy(() => import('./components/AdvancedDashboard').then(module => ({ default: module.AdvancedDashboard })));
+const ReportWriter = lazy(() => import('./components/ReportWriter').then(module => ({ default: module.ReportWriter })));
 import { LiveKitVoiceProvider } from './contexts/LiveKitVoiceContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import MirandaErrorBoundary from './components/MirandaErrorBoundary';
@@ -38,7 +39,8 @@ import {
   CheckCircle2,
   WrenchIcon,
   Settings as SettingsIcon,
-  Volume as VolumeUpIcon
+  Volume as VolumeUpIcon,
+  FileTextIcon
 } from 'lucide-react';
 
 interface AppProps {
@@ -119,8 +121,8 @@ function App({ initialTab = 'voice' }: AppProps) {
         {/* Voice detection indicator - shows when voice is detected */}
         <VoiceIndicator />
         <div className="max-w-6xl mx-auto relative">
-        {/* Enhanced background accents for visual interest */}
-                {/* Modern header with sleek design */}
+          {/* Enhanced background accents for visual interest */}
+          {/* Modern header with sleek design */}
         <header className="mb-8 relative fluid-card rounded-2xl p-4 border border-[rgba(255,255,255,0.5)] backdrop-blur-sm shadow-md" style={{ background: 'rgba(255, 255, 255, 0.85)', backdropFilter: 'blur(12px)' }}>
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <div className="flex items-center gap-4">
@@ -248,6 +250,18 @@ function App({ initialTab = 'voice' }: AppProps) {
                 </div>
               </TabsTrigger>
               <TabsTrigger 
+                value="reports" 
+                className="flex-1 rounded-full py-3 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#003087] data-[state=active]:to-[#004db3] data-[state=active]:text-white text-muted-foreground font-medium transition-all duration-300 hover:text-foreground focus-ring hover:bg-white/70 data-[state=active]:shadow-md"
+                style={{ color: activeTab === 'reports' ? 'white' : 'inherit' }}
+              >
+                <div className="flex items-center justify-center gap-2 w-full">
+                  <div className="bg-white/20 rounded-full p-1.5 shadow-inner">
+                    <FileTextIcon className="h-4 w-4" />
+                  </div>
+                  <span className="text-sm font-medium">Reports</span>
+                </div>
+              </TabsTrigger>
+              <TabsTrigger 
                 value="settings" 
                 className="flex-1 rounded-full py-3 data-[state=active]:bg-gradient-to-r data-[state=active]:from-[#003087] data-[state=active]:to-[#004db3] data-[state=active]:text-white text-muted-foreground font-medium transition-all duration-300 hover:text-foreground focus-ring hover:bg-white/70 data-[state=active]:shadow-md"
                 style={{ color: activeTab === 'settings' ? 'white' : 'inherit' }}
@@ -326,6 +340,12 @@ function App({ initialTab = 'voice' }: AppProps) {
                 </Suspense>
               </TabsContent>
               
+              <TabsContent value="reports" className="focus-visible:outline-none focus-visible:ring-0 m-0 animate-in fade-in-50 data-[state=inactive]:animate-out data-[state=inactive]:fade-out-0 data-[state=active]:duration-300">
+                <Suspense fallback={<div className="p-8 text-center">Loading Report Writer...</div>}>
+                  <ReportWriter />
+                </Suspense>
+              </TabsContent>
+              
               <TabsContent value="settings" className="focus-visible:outline-none focus-visible:ring-0 m-0 animate-in fade-in-50 data-[state=inactive]:animate-out data-[state=inactive]:fade-out-0 data-[state=active]:duration-300">
                 <div className="p-6">
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -353,25 +373,23 @@ function App({ initialTab = 'voice' }: AppProps) {
                   </div>
                 </div>
               </TabsContent>
-              
-
             </div>
-          </Tabs>
-        </main>
+            </Tabs>
+          </main>
 
-        {/* Status indicators removed as requested */}
+          {/* Status indicators removed as requested */}
 
-        <footer className="mt-8 text-center text-xs text-muted-foreground pt-6 border-t border-border">
-          <p className="flex items-center justify-center gap-1 font-medium">
-            <span>© 2025 Zooner Enterprises</span>
-            <span className="text-border/80">•</span>
-            <span>All Rights Reserved</span>
-          </p>
-        </footer>
-      </div>
+          <footer className="mt-8 text-center text-xs text-muted-foreground pt-6 border-t border-border">
+            <p className="flex items-center justify-center gap-1 font-medium">
+              <span>© 2025 Zooner Enterprises</span>
+              <span className="text-border/80">•</span>
+              <span>All Rights Reserved</span>
+            </p>
+          </footer>
+        </div>
       </div>
     </LiveKitVoiceProvider>
-  );
-}
+    );
+  }
 
 export default App;

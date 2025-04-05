@@ -28,9 +28,10 @@ const LIVEKIT_URL = import.meta.env.VITE_LIVEKIT_URL || 'wss://lark-za4hpayr.liv
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
 
 // Constants for performance optimization
-const MIC_PERMISSION_TIMEOUT = 5000; // 5 seconds
-const RECONNECT_DELAY = 3000; // 3 seconds
-const MAX_RECONNECT_ATTEMPTS = 3;
+const MIC_PERMISSION_TIMEOUT = 3000; // Reduced from 5 to 3 seconds
+const RECONNECT_DELAY = 1500; // Reduced from 3 to 1.5 seconds
+const MAX_RECONNECT_ATTEMPTS = 2; // Reduced from 3 to 2 attempts
+const AUDIO_BUFFER_SIZE = 1024; // Smaller buffer size for faster processing
 
 // Define types for voice synthesis events
 export type VoiceSynthesisEvent = {
@@ -319,8 +320,10 @@ class LiveKitVoiceService {
    * Initialize the LiveKit room
    * @param roomName The name of the room to join
    * @param token The token for authentication
+   * @param requireMicrophone Whether microphone permission is required
+   * @param fastConnect Whether to use fast connection mode (skips some checks for speed)
    */
-  public async initialize(roomName: string, token: string, requireMicrophone: boolean = false): Promise<void> {
+  public async initialize(roomName: string, token: string, requireMicrophone: boolean = false, fastConnect: boolean = true): Promise<void> {
     console.log('[LiveKitVoice] Initializing with room:', roomName, 'requireMicrophone:', requireMicrophone);
     this.roomName = roomName;
     this.token = token;

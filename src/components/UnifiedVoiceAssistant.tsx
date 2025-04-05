@@ -28,9 +28,10 @@ import { voiceSynthesisService } from '../services/voice/VoiceSynthesisService';
 import { openAIVoiceService } from '../services/voice/OpenAIVoiceService';
 import { groqService } from '../services/groq/GroqService';
 import { commandProcessingService } from '../services/voice/CommandProcessingService';
+import { voiceRecognitionService } from '../services/voice/VoiceRecognitionService';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-import { Tooltip } from './ui/tooltip';
+import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip';
 import { useToast } from './ui/use-toast';
 import '../styles/unified-voice-assistant.css';
 
@@ -45,6 +46,22 @@ interface CommandResponse {
     threat?: string;
     statute?: string;
   };
+}
+
+// Define CommandResult interface to match expected properties
+interface CommandResult {
+  executed: boolean;
+  result?: string;
+  parameters?: {
+    language?: string;
+    threat?: string;
+    statute?: string;
+  };
+}
+
+// Define CommandProcessingResult interface
+interface CommandProcessingResult {
+  result: string;
 }
 
 // Voice synthesis status types
@@ -271,165 +288,296 @@ export function UnifiedVoiceAssistant() {
   // Toggle listening state
   const toggleListening = useCallback(() => {
     if (currentlyListening) {
-      stopListening();
-      setCurrentlyListening(false);
-      setVisualFeedback({
-        active: false,
-        intensity: 0
-      });
+      stopVoiceRecognition();
     } else {
-      if (hasRecognitionSupport) {
-        startListening();
-        setCurrentlyListening(true);
-      } else {
-        toast({
-          title: "Speech Recognition Not Supported",
-          description: "Your browser doesn't support speech recognition. Please use text input instead.",
-          variant: "destructive"
-        });
-      }
+      startVoiceRecognition();
     }
-  }, [currentlyListening, hasRecognitionSupport, startListening, stopListening]);
+  }, [currentlyListening]);
 
-  // Handle user input (voice or text)
+  // Start voice recognition
+  const startVoiceRecognition = () => {
+    voiceRecognitionService.startListening();
+    setCurrentlyListening(true);
+  };
+
+  // Stop voice recognition
+  const stopVoiceRecognition = () => {
+    // Call the method to stop listening
+    voiceRecognitionService.stopListening();
+    setCurrentlyListening(false);
+    setInterimTranscript('');
+  };
+
+  // Handle user input (voice or text) with improved performance
   const handleUserInput = async (input: string) => {
-    if (!input || input.trim() === '') return;
+    if (!input.trim()) return;
     
-    // Add user message
-    const userMessage = { role: 'user' as const, content: input };
-    setMessages(prev => [...prev, userMessage]);
-    setTextInput('');
+    // Update UI immediately for better responsiveness
+    setMessages(prev => [...prev, { role: 'user', content: input }]);
     setIsProcessing(true);
+    setTextInput('');
+    
+    // Scroll to bottom immediately for better UX
+    setTimeout(() => {
+      if (messagesEndRef.current) {
+        messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+      }
+    }, 0);
     
     try {
-      let response: CommandResponse;
+      let response: string;
       
-      // Process command based on network status
+      // Check if we're offline
       if (isOffline) {
-        response = await processOfflineCommand(input);
-      } else if (useGroq && groqService.isAvailable()) {
-        // Use Groq for faster command processing
-        try {
-          console.log('[UnifiedVoiceAssistant] Using Groq for command processing');
-          const groqResult = await groqService.processCommand(input, {
-            officerName: settings.officerName || 'Officer',
-            location: settings.location || 'Louisiana',
-            previousCommand: messages.length > 0 ? messages[messages.length - 2]?.content : '',
-            previousResponse: messages.length > 0 ? messages[messages.length - 1]?.content : ''
-          });
+        // Process command offline
+        const offlineResponse = await processOfflineCommand(input);
+        response = offlineResponse.result || 'Command processed offline';
+        setLatestAction(offlineResponse.action);
+        
+        // Handle special command responses
+        if (commandResponse.parameters) {
+          // Process all command parameters in parallel for better performance
+          const promises: Promise<void>[] = [];
           
-          // Convert Groq result to CommandResponse format
-          response = {
-            action: groqResult.action || 'general_response',
-            executed: true,
-            result: groqResult.response,
-            parameters: {
-              confidence: groqResult.confidence
-            }
-          };
-        } catch (error) {
-          console.error('[UnifiedVoiceAssistant] Error using Groq, falling back to OpenAI:', error);
-          // Fall back to OpenAI if Groq fails
-          if (input.toLowerCase().includes('situation') || input.toLowerCase().includes('assessment')) {
-            response = await assessTacticalSituation(input) as CommandResponse;
-          } else if (input.toLowerCase().includes('what is') || input.toLowerCase().includes('who is') || input.toLowerCase().includes('how to')) {
-            response = await getGeneralKnowledge(input) as CommandResponse;
-          } else {
-            response = await processVoiceCommand(input);
+          if (commandResponse.parameters.language) {
+            // Trigger Miranda rights in the specified language
+            promises.push(new Promise<void>(resolve => {
+              document.dispatchEvent(new CustomEvent('miranda-language-selected', {
+                detail: { language: commandResponse.parameters.language }
+              }));
+              resolve();
+            }));
+          }
+          
+          if (commandResponse.parameters.threat) {
+            // Trigger threat detection with the specified type
+            promises.push(new Promise<void>(resolve => {
+              document.dispatchEvent(new CustomEvent('threat-detected', {
+                detail: { type: commandResponse.parameters.threat }
+              }));
+              resolve();
+            }));
+          }
+          
+          if (commandResponse.parameters.statute) {
+            // Trigger statute lookup
+            promises.push(new Promise<void>(resolve => {
+              document.dispatchEvent(new CustomEvent('statute-lookup', {
+                detail: { code: commandResponse.parameters.statute }
+              }));
+              resolve();
+            }));
+          }
+          
+          // Wait for all events to be dispatched
+          if (promises.length > 0) {
+            await Promise.all(promises);
           }
         }
       } else {
-        // Use OpenAI for command processing
-        console.log('[UnifiedVoiceAssistant] Using OpenAI for command processing');
-        if (input.toLowerCase().includes('situation') || input.toLowerCase().includes('assessment')) {
-          response = await assessTacticalSituation(input) as CommandResponse;
-        } else if (input.toLowerCase().includes('what is') || input.toLowerCase().includes('who is') || input.toLowerCase().includes('how to')) {
-          response = await getGeneralKnowledge(input) as CommandResponse;
-        } else {
-          response = await processVoiceCommand(input);
+        // Try to process as a command first
+        try {
+          const commandResult = await commandProcessingService.processCommand(input);
+          const typedResult = commandResult as any;
+          
+          if (typedResult && typedResult.executed) {
+            // It was a valid command
+            if (typedResult.result) {
+              response = typedResult.result;
+              setLatestAction(typedResult.result);
+            } else {
+              response = 'Command executed successfully';
+            }
+            
+            // Handle special command parameters
+            if (typedResult.parameters) {
+              // Process all command parameters in parallel for better performance
+              const promises: Promise<void>[] = [];
+              
+              if (typedResult.parameters.language) {
+                // Trigger Miranda rights in the specified language
+                promises.push(new Promise<void>(resolve => {
+                  document.dispatchEvent(new CustomEvent('miranda-language-selected', {
+                    detail: { language: typedResult.parameters.language }
+                  }));
+                  resolve();
+                }));
+              }
+              
+              if (typedResult.parameters.threat) {
+                // Trigger threat detection with the specified type
+                promises.push(new Promise<void>(resolve => {
+                  document.dispatchEvent(new CustomEvent('threat-detected', {
+                    detail: { type: typedResult.parameters.threat }
+                  }));
+                  resolve();
+                }));
+              }
+              
+              if (typedResult.parameters.statute) {
+                // Trigger statute lookup
+                promises.push(new Promise<void>(resolve => {
+                  document.dispatchEvent(new CustomEvent('statute-lookup', {
+                    detail: { code: typedResult.parameters.statute }
+                  }));
+                  resolve();
+                }));
+              }
+              
+              // Wait for all events to be dispatched
+              if (promises.length > 0) {
+                await Promise.all(promises);
+              }
+            }
+          } else {
+            // Not a command, get a general response
+            // Start both Groq and tactical assessment in parallel if needed
+            const responsePromise = useGroq ? 
+              groqService.processCommand(input).then(res => {
+                const typedRes = res as any;
+                return typedRes && typedRes.result ? typedRes.result : '';
+              }) : 
+              getGeneralKnowledge(input);
+            
+            // Check if we need tactical assessment
+            const needsTactical = input.toLowerCase().includes('tactical') || 
+              input.toLowerCase().includes('situation') ||
+              input.toLowerCase().includes('assess');
+            
+            let tacticalPromise: Promise<string> | null = null;
+            if (needsTactical) {
+              // Start tactical assessment in parallel
+              tacticalPromise = assessTacticalSituation(input) as Promise<string>;
+            }
+            
+            // Wait for the main response with a timeout
+            const timeoutPromise = new Promise<string>(resolve => {
+              setTimeout(() => resolve('I\'m still processing your request...'), 2000);
+            });
+            
+            response = await Promise.race([responsePromise, timeoutPromise]);
+            
+            // If we got a timeout message, update it when the real response arrives
+            if (response === 'I\'m still processing your request...') {
+              // Continue waiting for the real response in the background
+              responsePromise.then(realResponse => {
+                // Update the message once we have the real response
+                setMessages(prev => {
+                  const newMessages = [...prev];
+                  if (newMessages.length > 0) {
+                    newMessages[newMessages.length - 1] = { 
+                      role: 'assistant', 
+                      content: personalizeMessage(realResponse)
+                    };
+                  }
+                  return newMessages;
+                });
+                // Speak the response once we have it
+                speakResponse(personalizeMessage(realResponse));
+              }).catch(error => {
+                console.error('Error getting response:', error);
+              });
+            }
+            
+            // If we need tactical assessment and have a response, append it
+            if (needsTactical && tacticalPromise) {
+              try {
+                // Set a timeout to ensure we don't wait too long
+                const tacticalTimeoutPromise = new Promise<string>(resolve => {
+                  setTimeout(() => resolve(''), 2500);
+                });
+                
+                const tacticalAssessment = await Promise.race([tacticalPromise, tacticalTimeoutPromise]);
+                
+                // Append tactical assessment if available
+                if (tacticalAssessment) {
+                  response += '\n\nTACTICAL ASSESSMENT: ' + tacticalAssessment;
+                }
+              } catch (tacticalError) {
+                console.warn('Error getting tactical assessment:', tacticalError);
+              }
+            }
+          }
+        } catch (commandError) {
+          console.error('Error processing command:', commandError);
+          // Fallback to general knowledge
+          response = await getGeneralKnowledge(input);
+        }
+      
+      // Try LiveKit first, then OpenAI, then browser synthesis
+      try {
+        await Promise.race([liveKitPromise, timeoutPromise]);
+        console.log('Used LiveKit for voice synthesis');
+        setVoiceStatus('idle');
+      } catch (liveKitError) {
+        // Try OpenAI next
+        try {
+          await Promise.race([openAIPromise, timeoutPromise]);
+          console.log('Used OpenAI for voice synthesis');
+          setVoiceStatus('fallback');
+        } catch (openAIError) {
+          // Finally try browser synthesis
+          try {
+            await Promise.race([browserPromise, timeoutPromise]);
+            console.log('Used browser for voice synthesis');
+            setVoiceStatus('fallback');
+          } catch (browserError) {
+            console.error('All voice synthesis methods failed');
+            setVoiceStatus('error');
+            toast({
+              title: 'Voice Synthesis Error',
+              description: 'Unable to speak response. Please check your audio settings.',
+              variant: 'destructive'
+            });
+          }
         }
       }
-      
-      // Handle response
-      if (response) {
-        const assistantMessage = { 
-          role: 'assistant' as const, 
-          content: personalizeMessage(response.result || 'I processed your request.') 
-        };
-        setMessages(prev => [...prev, assistantMessage]);
-        setLatestAction(response.action);
-        
-        // Speak the response
-        speakResponse(assistantMessage.content);
-      }
     } catch (error) {
-      console.error('Error processing command:', error);
-      const errorMessage = { 
-        role: 'assistant' as const, 
-        content: 'Sorry, I encountered an error processing your request. Please try again.' 
-      };
-      setMessages(prev => [...prev, errorMessage]);
-      
-      // Speak the error message
-      speakResponse(errorMessage.content);
+      console.error('Voice synthesis error:', error);
+      setVoiceStatus('error');
     } finally {
-      setIsProcessing(false);
+      setIsSpeaking(false);
+      voiceRecognitionService.setSystemSpeaking(false);
     }
   };
 
-  // Handle text input submission
-  const handleTextSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (textInput.trim()) {
-      handleUserInput(textInput);
-    }
-  };
-
-  // Speak response using voice synthesis
-  const speakResponse = async (text: string) => {
-    if (!text) return;
+  // Stop speaking - optimized to run in parallel with improved error handling
+  const stopSpeaking = async () => {
+    if (!isSpeaking) return;
     
-    try {
-      // Use OpenAI voice service with the "ash" voice for high-quality speech synthesis
-      console.log('[UnifiedVoiceAssistant] Using OpenAI voice service with Ash voice');
-      await openAIVoiceService.speak(text, 'ash');
-    } catch (openAIError) {
-      console.error('Error using OpenAI voice service:', openAIError);
-      setVoiceStatus('fallback');
-      
-      try {
-        // Fall back to standard voice synthesis service if OpenAI fails
-        console.log('[UnifiedVoiceAssistant] Falling back to standard voice synthesis');
-        await voiceSynthesisService.speak(text);
-      } catch (fallbackError) {
-        console.error('Error with fallback voice synthesis:', fallbackError);
-        setVoiceStatus('error');
-        toast({
-          title: "Voice Synthesis Error",
-          description: "There was an error with voice synthesis. Please check console for details.",
-          variant: "destructive"
-        });
-      }
-    }
-  };
-
-  // Stop speaking
-  const stopSpeaking = () => {
-    voiceSynthesisService.stop();
+    // Update UI immediately for better responsiveness
     setIsSpeaking(false);
     setVoiceStatus('idle');
-  };
-
-  // Reset the assistant
-  const resetAssistant = () => {
-    setMessages([]);
-    setLatestAction(null);
-    stopSpeaking();
-    if (currentlyListening) {
-      stopListening();
-      setCurrentlyListening(false);
+    
+    try {
+      // Stop all voice services in parallel with individual error handling
+      const stopPromises = [
+        liveKitVoiceService.stop().catch(err => {
+          console.warn('Error stopping LiveKit speech:', err);
+          return false;
+        }),
+        openAIVoiceService.stop().catch(err => {
+          console.warn('Error stopping OpenAI speech:', err);
+          return false;
+        }),
+        voiceSynthesisService.stop().catch(err => {
+          console.warn('Error stopping browser speech:', err);
+          return false;
+        })
+      ];
+      
+      // Wait for all stop attempts to complete with a timeout
+      const timeoutPromise = new Promise<boolean[]>(resolve => {
+        setTimeout(() => resolve([false, false, false]), 500); // Don't wait more than 500ms
+      });
+      
+      await Promise.race([Promise.all(stopPromises), timeoutPromise]);
+    } catch (error) {
+      console.error('Error stopping speech:', error);
+    } finally {
+      // Ensure the voice recognition service knows we're not speaking
+      voiceRecognitionService.setSystemSpeaking(false);
     }
-    resetTranscript();
     setInterimTranscript('');
     setTextInput('');
     setVisualFeedback({
@@ -466,6 +614,62 @@ export function UnifiedVoiceAssistant() {
     }
   };
 
+  // Get microphone status class
+  const getMicStatusClass = () => {
+    switch (micStatus) {
+      case 'granted':
+        return 'mic-granted';
+      case 'denied':
+        return 'mic-denied';
+      case 'prompt':
+        return 'mic-prompt';
+      default:
+        return 'mic-prompt';
+    }
+  };
+
+  // Get microphone status text
+  const getMicStatusText = () => {
+    switch (micStatus) {
+      case 'granted':
+        return 'Microphone access granted';
+      case 'denied':
+        return 'Microphone access denied';
+      case 'prompt':
+        return 'Microphone access prompt';
+      default:
+        return 'Microphone access prompt';
+    }
+  };
+
+  // Get voice status class
+  const getVoiceStatusClass = () => {
+    switch (voiceStatus) {
+      case 'speaking':
+        return 'voice-speaking';
+      case 'error':
+        return 'voice-error';
+      case 'fallback':
+        return 'voice-fallback';
+      default:
+        return 'voice-idle';
+    }
+  };
+
+  // Get voice status text
+  const getVoiceStatusText = () => {
+    switch (voiceStatus) {
+      case 'speaking':
+        return 'Voice synthesis active';
+      case 'error':
+        return 'Voice synthesis error';
+      case 'fallback':
+        return 'Voice synthesis fallback';
+      default:
+        return 'Voice synthesis idle';
+    }
+  };
+
   // Render the component
   return (
     <div className="unified-voice-assistant">
@@ -478,37 +682,40 @@ export function UnifiedVoiceAssistant() {
           <Tooltip>
             <TooltipTrigger asChild>
               <div className="status-indicator">
-                {getMicStatusIcon()}
-                <span>Mic</span>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>{`Microphone: ${micStatus}`}</p>
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="status-indicator">
-                {getVoiceStatusIcon()}
-                <span>Voice</span>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>{`Voice: ${voiceStatus}`}</p>
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="status-indicator">
                 {isOffline ? 
-                  <AlertTriangleIcon className="text-yellow-500" size={16} /> : 
-                  <CheckCircleIcon className="text-green-500" size={16} />
+                  <Badge variant="outline" className="status-badge offline">Offline</Badge> :
+                  <Badge variant="outline" className="status-badge online">Online</Badge>
                 }
-                <span>{isOffline ? "Offline" : "Online"}</span>
               </div>
             </TooltipTrigger>
             <TooltipContent>
-              <p>{isOffline ? "Offline Mode" : "Online Mode"}</p>
+              {isOffline ? 'Offline Mode' : 'Online Mode'}
+            </TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="status-indicator">
+                <Badge variant="outline" className={`status-badge ${getMicStatusClass()}`}>
+                  {getMicStatusIcon()}
+                </Badge>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>
+              {getMicStatusText()}
+            </TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="status-indicator">
+                <Badge variant="outline" className={`status-badge ${getVoiceStatusClass()}`}>
+                  {getVoiceStatusIcon()}
+                </Badge>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>
+              {getVoiceStatusText()}
             </TooltipContent>
           </Tooltip>
         </div>
@@ -630,7 +837,15 @@ export function UnifiedVoiceAssistant() {
           <Button
             variant="outline"
             size="icon"
-            onClick={resetAssistant}
+            onClick={() => {
+              // Reset the assistant state
+              setMessages([]);
+              setLatestAction(null);
+              setInterimTranscript('');
+              setTextInput('');
+              stopVoiceRecognition();
+              stopSpeaking();
+            }}
             className="reset-button"
           >
             <RefreshCwIcon size={20} />

@@ -8,6 +8,8 @@ interface SpeechRecognitionHook {
   stopListening: () => void;
   hasRecognitionSupport: boolean;
   error: string | null;
+  wakeWordDetected: boolean;
+  setWakeWordDetected: (detected: boolean) => void;
 }
 
 export function useSpeechRecognition(): SpeechRecognitionHook {
@@ -15,7 +17,9 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
   const [transcript, setTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [hasRecognitionSupport, setHasRecognitionSupport] = useState(false);
+  const [wakeWordDetected, setWakeWordDetected] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const restartTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Initialize speech recognition
   useEffect(() => {
@@ -34,18 +38,43 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
       setHasRecognitionSupport(true);
       
       const recognitionInstance = new SpeechRecognition();
-      recognitionInstance.continuous = false; // Set to single utterance mode
-      recognitionInstance.interimResults = false; // Disable interim results for more stability
+      recognitionInstance.continuous = true; // Enable continuous mode for faster response
+      recognitionInstance.interimResults = true; // Enable interim results for real-time feedback
+      recognitionInstance.maxAlternatives = 1; // Only need one alternative to improve performance
       recognitionInstance.lang = 'en-US';
       
       // Handle results
       recognitionInstance.onresult = (event: SpeechRecognitionEvent) => {
-        console.log('Speech recognition result received:', event);
         const current = event.resultIndex;
         const result = event.results[current];
         const transcriptText = result[0].transcript;
-        console.log('Transcript text:', transcriptText, 'Confidence:', result[0].confidence);
-        setTranscript(transcriptText);
+        const confidence = result[0].confidence;
+        
+        // Only log final results to reduce console noise
+        if (result.isFinal) {
+          console.log('Final transcript:', transcriptText, 'Confidence:', confidence);
+          setTranscript(transcriptText);
+          
+          // Dispatch event for other components to react to
+          const customEvent = new CustomEvent('lark-audio-detected', {
+            detail: {
+              transcript: transcriptText,
+              confidence: confidence,
+              isFinal: true
+            }
+          });
+          window.dispatchEvent(customEvent);
+        } else {
+          // For interim results, dispatch event but don't log
+          const customEvent = new CustomEvent('lark-interim-transcript', {
+            detail: {
+              transcript: transcriptText,
+              confidence: confidence,
+              isFinal: false
+            }
+          });
+          window.dispatchEvent(customEvent);
+        }
       };
       
       // Handle start event
@@ -60,15 +89,23 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
         console.log('Speech recognition ended');
         setListening(false);
         
-        // Auto-restart if we're supposed to be listening
+        // Auto-restart if we're supposed to be listening, with a small delay to prevent rapid restarts
         if (listening) {
-          console.log('Auto-restarting speech recognition...');
-          try {
-            recognitionInstance.start();
-          } catch (e) {
-            console.error('Error auto-restarting speech recognition:', e);
-            setError('Failed to restart speech recognition.');
+          // Clear any existing restart timeout
+          if (restartTimeoutRef.current) {
+            clearTimeout(restartTimeoutRef.current);
           }
+          
+          // Set a short delay before restarting to prevent excessive CPU usage
+          restartTimeoutRef.current = setTimeout(() => {
+            console.log('Auto-restarting speech recognition...');
+            try {
+              recognitionInstance.start();
+            } catch (e) {
+              console.error('Error auto-restarting speech recognition:', e);
+              setError('Failed to restart speech recognition.');
+            }
+          }, 300); // 300ms delay is short enough to be imperceptible but helps prevent rapid cycling
         }
       };
       
@@ -212,6 +249,8 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
     startListening,
     stopListening,
     hasRecognitionSupport,
-    error
+    error,
+    wakeWordDetected,
+    setWakeWordDetected
   };
 }
